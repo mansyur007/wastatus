@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="WA Status Converter">
+  <title>WA Status Converter</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2BE071" />
+      <stop offset=".55" stop-color="#25D366" />
+      <stop offset="1" stop-color="#128C7E" />
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151D19" />
+      <stop offset="1" stop-color="#070A09" />
+    </linearGradient>
+  </defs>
+
+  <!-- Same squircle + WA gradient as the header mark in the app. -->
+  <rect width="512" height="512" rx="116" fill="url(#tile)" />
+  <!-- A lit top edge, so the tile reads as a raised surface at large sizes. -->
+  <path d="M116 0h280a116 116 0 0 1 116 116v46C512 92 420 40 256 40S0 92 0 162v-46A116 116 0 0 1 116 0Z" fill="#fff" opacity=".16" />
+
+  <!-- The 9:16 frame the whole app exists to produce. Filled, not stroked, so
+       it survives being scaled down to a 16px favicon. -->
+  <rect x="172" y="84" width="168" height="344" rx="38" fill="url(#glass)" />
+  <rect x="236" y="106" width="40" height="9" rx="4.5" fill="#fff" opacity=".22" />
+  <path d="M226 202v108l92-54z" fill="#2BE071" />
+</svg>

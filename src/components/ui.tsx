@@ -45,7 +45,7 @@ export function Section({
   const [open, setOpen] = useState(defaultOpen)
   const id = useId()
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015] transition-colors duration-300 ease-fluid hover:border-white/[0.1]">
+    <section className="overflow-clip rounded-2xl border border-white/[0.06] bg-white/[0.015] transition-colors duration-300 ease-fluid hover:border-white/[0.1]">
       <button
         type="button"
         aria-expanded={open}
@@ -81,7 +81,7 @@ export function Section({
           open ? 'grid-rows-[1fr] opacity-100' : 'invisible grid-rows-[0fr] opacity-0'
         }`}
       >
-        <div className="overflow-hidden">
+        <div className="overflow-clip">
           <div className="space-y-5 border-t border-white/[0.05] px-4 pb-5 pt-4">{children}</div>
         </div>
       </div>
@@ -89,57 +89,33 @@ export function Section({
   )
 }
 
-export function Select<T extends string | number>({
-  value,
-  options,
-  onChange,
-  disabled,
-}: {
-  value: T
-  options: { value: T; label: string }[]
-  onChange: (v: T) => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={String(value)}
-        disabled={disabled}
-        onChange={(e) => {
-          const opt = options.find((o) => String(o.value) === e.target.value)
-          if (opt) onChange(opt.value)
-        }}
-        className="input cursor-pointer appearance-none pr-10"
-      >
-        {options.map((o) => (
-          <option key={String(o.value)} value={String(o.value)} className="bg-ink-850">
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <IconChevron className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mist-400" />
-    </div>
-  )
-}
-
+/**
+ * The app's only single-choice list. It replaced the native <select>: clicking
+ * a <select> makes the browser scroll it into view before the popup opens,
+ * which yanked the whole page up or down mid-tuning.
+ */
 export function RadioGroup<T extends string>({
+  label,
   value,
   options,
   onChange,
 }: {
+  /** Names the group for screen readers; mirror the enclosing Field label. */
+  label: string
   value: T
-  options: { value: T; label: string; hint?: string }[]
+  options: { value: T; label: string; hint?: string; note?: ReactNode }[]
   onChange: (v: T) => void
 }) {
   return (
-    <div className="grid gap-2">
+    <div role="radiogroup" aria-label={label} className="grid gap-2">
       {options.map((o) => {
         const active = o.value === value
         return (
           <button
             key={o.value}
             type="button"
-            aria-pressed={active}
+            role="radio"
+            aria-checked={active}
             onClick={() => onChange(o.value)}
             className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all duration-200 ease-fluid ${
               active
@@ -158,12 +134,15 @@ export function RadioGroup<T extends string>({
                 }`}
               />
             </span>
-            <span className="min-w-0">
+            <span className="min-w-0 flex-1">
               <span className={`block text-sm font-medium ${active ? 'text-white' : 'text-mist-200'}`}>
                 {o.label}
               </span>
               {o.hint ? <span className="block text-[11px] text-mist-400">{o.hint}</span> : null}
             </span>
+            {o.note ? (
+              <span className="tnum shrink-0 text-[11px] font-medium text-mist-400">{o.note}</span>
+            ) : null}
           </button>
         )
       })}

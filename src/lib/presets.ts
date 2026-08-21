@@ -18,11 +18,11 @@ export const WA_MAX_DELIVERED_HEIGHT = 1280
 /** UI safe zone in 1080x1920 output pixels (sender name / reply bar). */
 export const SAFE_ZONE = { top: 120, bottom: 200, contentWidth: 1080, contentHeight: 1600 }
 
-export const RESOLUTIONS: { key: ResolutionKey; label: string }[] = [
-  { key: '720x1280', label: '720 x 1280 - plafon WhatsApp (disarankan)' },
-  { key: '1080x1920', label: '1080 x 1920 - di atas plafon, encode lebih lama' },
-  { key: '540x960', label: '540 x 960 - hemat kuota' },
-  { key: 'source', label: 'Ikuti sumber (maks 1080)' },
+export const RESOLUTIONS: { key: ResolutionKey; label: string; hint: string }[] = [
+  { key: '720x1280', label: '720 x 1280', hint: 'Plafon WhatsApp - disarankan' },
+  { key: '1080x1920', label: '1080 x 1920', hint: 'Di atas plafon, encode lebih lama' },
+  { key: '540x960', label: '540 x 960', hint: 'Hemat kuota, encode paling cepat' },
+  { key: 'source', label: 'Ikuti sumber', hint: 'Ikut ukuran video asli, maks 1080' },
 ]
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)

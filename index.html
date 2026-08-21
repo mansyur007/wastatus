@@ -10,6 +10,13 @@
       content="Ubah video apa pun jadi WhatsApp Status 9:16 di bawah 16 MB. Semua proses berjalan di perangkat kamu."
     />
     <title>WA Status Converter</title>
+
+    <!-- SVG first for sharp tabs; the .ico is the fallback older engines and
+         bare /favicon.ico probes reach for. -->
+    <link rel="icon" href="./favicon.ico" sizes="48x48" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <style>
       /* Painted before the bundle loads, so there is no white flash. */
       html,

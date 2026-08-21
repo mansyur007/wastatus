@@ -15,7 +15,6 @@ import {
   RadioGroup,
   Section,
   SegmentedControl,
-  Select,
   Slider,
   Toggle,
 } from './ui'
@@ -123,11 +122,20 @@ export function Panel({
           summary={`${dims.width}×${dims.height} · ${ASPECT_LABEL[s.aspectMode]}`}
           defaultOpen
         >
-          <Field label="Resolusi" hint={`${dims.width}×${dims.height}`}>
-            <Select
+          <Field label="Resolusi">
+            <RadioGroup
+              label="Resolusi"
               value={s.resolution}
-              options={RESOLUTIONS.map((r) => ({ value: r.key, label: r.label }))}
               onChange={(resolution) => onChange({ resolution })}
+              options={RESOLUTIONS.map((r) => {
+                const d = targetDimensions(r.key, meta)
+                return {
+                  value: r.key,
+                  label: r.label,
+                  hint: r.hint,
+                  note: `${d.width}×${d.height}`,
+                }
+              })}
             />
             {dims.height > WA_MAX_DELIVERED_HEIGHT ? (
               <Note tone="warn">
@@ -139,6 +147,7 @@ export function Panel({
 
           <Field label="Mode aspek (9:16)">
             <RadioGroup
+              label="Mode aspek"
               value={s.aspectMode}
               onChange={(aspectMode) => onChange({ aspectMode })}
               options={[
@@ -264,6 +273,7 @@ export function Panel({
         >
           <Field label="Mode encoding">
             <RadioGroup
+              label="Mode encoding"
               value={s.encodingMode}
               onChange={(encodingMode) => onChange({ encodingMode })}
               options={[
@@ -355,12 +365,12 @@ export function Panel({
                 onChange={(v) => onChange({ audioChannels: v === 1 ? 1 : 2 })}
               />
             </Field>
-            <Field label="Bitrate audio">
-              <Select<AudioBitrate>
+            <Field label="Bitrate audio" hint="kbps">
+              <SegmentedControl<AudioBitrate>
                 value={s.audioBitrate}
-                options={[64, 96, 128, 192].map((v) => ({
-                  value: v as AudioBitrate,
-                  label: `${v} kbps`,
+                options={([64, 96, 128, 192] as AudioBitrate[]).map((v) => ({
+                  value: v,
+                  label: String(v),
                 }))}
                 onChange={(audioBitrate) => onChange({ audioBitrate })}
               />
