@@ -1,0 +1,23 @@
+node_modules
+dist
+
+# Artefak build desktop (esbuild + electron-builder).
+electron-dist
+release
+
+# ffmpeg.exe / ffprobe.exe untuk build desktop: ~100MB masing-masing, di atas
+# limit file GitHub. Taruh manual di resources/ffmpeg/ sebelum `npm run
+# electron:build` (dipakai lewat extraResources di package.json).
+resources/ffmpeg
+
+# Dihasilkan ulang oleh scripts/copy-ffmpeg-core.mjs (postinstall/dev/build).
+public/ffmpeg
+
+# Video sumber untuk uji coba: pribadi, besar, dan repo ini publik.
+media
+
+.claude/settings.local.json
+tsconfig.tsbuildinfo
+.body.txt
+.DS_Store
+._*

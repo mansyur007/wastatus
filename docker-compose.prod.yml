@@ -1,0 +1,32 @@
+# Production stack for WA Status Converter (wastatus.emha.space).
+#
+# Own stack, joins the external estate network `emha_shared` so the shared
+# front door (`emha-caddy`, owned by the emhauniverse stack) can reverse-proxy
+# it by container name. Publishes no host ports.
+#
+# Stateless: no volumes, no .env, no database — every conversion happens in the
+# visitor's browser. A redeploy is just a fresh image.
+#
+# Deploy:  docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  wa-status:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wa-status:latest
+    container_name: wa-status
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - emha_shared
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  emha_shared:
+    external: true

@@ -1,0 +1,13 @@
+node_modules
+src
+public
+media
+android
+scripts
+.git
+.github
+.claude
+*.md
+package-lock.json
+tsconfig.tsbuildinfo
+.DS_Store

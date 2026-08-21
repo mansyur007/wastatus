@@ -1,0 +1,51 @@
+# In-container static server for wa-status (behind the estate front door
+# `emha-caddy`, which terminates TLS for wastatus.emha.space and proxies here).
+#
+# The app is 100% client-side: ffmpeg.wasm does the transcoding in the visitor's
+# browser, nothing is ever uploaded. So this container only serves files — but it
+# MUST serve the cross-origin-isolation headers, otherwise swapping in
+# @ffmpeg/core-mt (SharedArrayBuffer) later would silently break.
+
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	root * /srv
+	encode gzip
+
+	header {
+		# Cross-origin isolation — mirrors vite.config.ts dev/preview headers.
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		Cross-Origin-Resource-Policy "same-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Vite hashes these filenames -> safe to cache forever.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+
+	# ffmpeg core filenames are NOT hashed (copy-ffmpeg-core.mjs writes fixed
+	# names), so a week — long enough to avoid re-downloading 32MB, short enough
+	# that a core bump lands without a hard refresh.
+	@core path /ffmpeg/*
+	header @core Cache-Control "public, max-age=604800"
+
+	# Go's mime table is not guaranteed to know .wasm; be explicit or the
+	# streaming instantiation path refuses the response.
+	@wasm path *.wasm
+	header @wasm Content-Type "application/wasm"
+
+	@html path / /index.html
+	header @html Cache-Control "no-cache"
+
+	respond /healthz "ok" 200
+
+	try_files {path} /index.html
+	file_server
+}

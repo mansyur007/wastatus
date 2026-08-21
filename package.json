@@ -1,0 +1,83 @@
+{
+  "name": "wa-status",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-ffmpeg-core.mjs",
+    "dev": "node scripts/copy-ffmpeg-core.mjs && vite",
+    "build": "node scripts/copy-ffmpeg-core.mjs && tsc -b && vite build",
+    "preview": "vite preview",
+    "electron:bundle": "node scripts/build-electron.mjs",
+    "electron:dev": "node scripts/build-electron.mjs && electron . --dev",
+    "electron:start": "npm run build && node scripts/build-electron.mjs && electron .",
+    "electron:build": "npm run build && node scripts/build-electron.mjs && electron-builder --win",
+    "typecheck": "tsc -b && tsc -p tsconfig.electron.json"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@ffmpeg/core": "^0.12.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "main": "electron-dist/main.cjs",
+  "build": {
+    "appId": "com.mansyur.wastatus",
+    "productName": "WA Status Converter",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron-dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "WA Status Converter"
+    },
+    "portable": {
+      "artifactName": "WA-Status-Converter-portable-${version}.exe"
+    }
+  }
+}
