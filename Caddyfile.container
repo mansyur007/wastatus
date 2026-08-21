@@ -13,6 +13,8 @@
 
 :8080 {
 	root * /srv
+
+	# Fallback untuk file tanpa sidecar .gz (aset kecil).
 	encode gzip
 
 	header {
@@ -47,5 +49,9 @@
 	respond /healthz "ok" 200
 
 	try_files {path} /index.html
-	file_server
+
+	# Sidecar .gz dibuat saat build image (lihat Dockerfile) -> nol CPU per hit.
+	file_server {
+		precompressed gzip
+	}
 }

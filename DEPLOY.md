@@ -4,6 +4,9 @@ WA Status Converter di VPS EMHA Universe (`103.169.207.239`), di belakang front
 door bersama `emha-caddy`. Aturan estate: lihat skill `emha-deploy` / `emha-docker`
 di repo `emhauniverse`.
 
+**Status: live** — https://wastatus.emha.space (sertifikat Let's Encrypt terbit
+2026-08-21, `crossOriginIsolated: true` terverifikasi dari browser publik).
+
 ## Bentuk deploy
 
 App ini **100% client-side** (ffmpeg.wasm di browser). Tidak ada backend, tidak ada
@@ -17,61 +20,70 @@ state, tidak ada `.env`, tidak ada volume — containernya hanya static file ser
 | Network | `emha_shared` (external) |
 | State | tidak ada — redeploy = image baru, aman total |
 
-**`dist/` dibangun di mesin dev / CI, bukan di VPS.** RAM VPS cuma ~600Mi free;
-`tsc -b && vite build` di sana berisiko OOM-kill container estate lain. Dockerfile
-hanya `COPY dist /srv`.
+**`dist/` dibangun di mesin dev / CI runner, bukan di VPS.** RAM VPS cuma ~500Mi
+bebas; `tsc -b && vite build` di sana berisiko OOM-kill container estate lain.
+Dockerfile hanya `COPY dist /srv` + prakompresi.
 
-## Prasyarat sekali jalan
+**Prakompresi.** Core ffmpeg 32 MB di-gzip **sekali saat build image** (sidecar
+`.gz`, disajikan lewat `file_server { precompressed gzip }`). Sebelum ini Caddy
+meng-gzip tiap permintaan: 1.14 s CPU per hit. Sekarang 0.23 s dan sedikit lebih
+kecil (10.2 MB vs 10.8 MB, karena `gzip -9`).
 
-1. **A record** `wastatus.emha.space` → `103.169.207.239`. Wajib duluan — tanpa itu
-   Caddy tidak bisa terbitkan sertifikat Let's Encrypt (tidak ada wildcard DNS).
-2. Network estate sudah ada (`docker network create emha_shared` — sudah dibuat).
-3. Key SSH `~/.ssh/development` ada di mesin yang men-deploy.
-4. **Route di Caddyfile repo `emhauniverse`** (bukan diedit di VPS saja — deploy
-   portal rsync `--delete` dan akan menimpanya):
+## Prasyarat (sudah beres semua)
 
-   ```
-   wastatus.emha.space {
-   	encode gzip
-   	reverse_proxy wa-status:8080
-   }
-   ```
+1. A record `wastatus.emha.space` -> `103.169.207.239` — **aktif**.
+2. Network estate `emha_shared` — sudah ada.
+3. Key SSH `development` (di mesin ini ada di `~/Documents/mansyur-personal/.ssh/`).
+4. Route di Caddyfile — **sudah dipasang di VPS**, tapi lihat peringatan di bawah.
 
-   Header COOP/COEP di-set oleh container wa-status sendiri dan diteruskan Caddy.
-   Setelah commit + push emhauniverse (atau edit manual di VPS pakai `cat >`):
+## Route Caddy belum ter-commit di repo emhauniverse
 
-   ```bash
-   cd /opt/emhauniverse && docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
-   ```
+Blok ini sudah ditambahkan langsung ke `/opt/emhauniverse/Caddyfile` (append
+in-place, inode terjaga, `caddy reload` sudah jalan):
 
-   `caddy reload` TIDAK cukup — Caddyfile di-bind-mount sebagai file tunggal,
-   rsync menukar inode-nya (gotcha #2 di skill `emha-deploy`).
+```
+wastatus.emha.space {
+	encode gzip
+	reverse_proxy wa-status:8080
+}
+```
+
+Deploy portal berikutnya melakukan rsync `--delete` dan **akan menghapus route ini**
+kalau belum ada di repo `emhauniverse`. Commitnya sudah disiapkan di branch
+`feat/wastatus-route` (worktree lokal), tinggal push + merge ke `main`.
 
 ## Deploy rutin
+
+Otomatis lewat GitHub Actions tiap push ke `main` (`.github/workflows/deploy.yml`):
+build di runner -> rsync `dist/` + file container -> `compose up -d --build` -> smoke
+test. Butuh 3 secret di repo:
+
+| Secret | Nilai |
+| --- | --- |
+| `VPS_HOST` | `103.169.207.239` |
+| `VPS_USER` | `root` |
+| `VPS_SSH_KEY` | private key deploy (disarankan key khusus `wastatus-ci`, bukan `development` yang memegang seluruh estate) |
+
+Manual (tanpa Actions), dari mesin yang punya key:
 
 ```bash
 bash scripts/deploy-vps.sh
 ```
 
-Script itu: `npm run build` → kirim `dist/` + file container lewat `tar | ssh`
-(mesin Windows ini tidak punya rsync) → `docker compose up -d --build` di VPS →
-smoke test. `dist/` di VPS dihapus dulu tiap deploy supaya asset hash lama tidak
-menumpuk.
-
-Override via env: `KEY=`, `HOST=`, `DIR=`, `URL=`.
+Script itu build lokal lalu kirim lewat `tar | ssh` (mesin Windows tidak punya
+rsync). Override via env: `KEY=`, `HOST=`, `DIR=`, `URL=`.
 
 ## Troubleshooting
 
 ```bash
-ssh -i ~/.ssh/development root@103.169.207.239
+ssh -i ~/Documents/mansyur-personal/.ssh/development root@103.169.207.239
 docker compose -f /opt/wa-status/docker-compose.prod.yml logs -f --tail=50 wa-status
-docker network inspect emha_shared | grep -A3 wa-status     # container nyantol?
-docker exec emha-caddy wget -qO- http://wa-status:8080/healthz   # reachable dari Caddy?
+docker exec emha-caddy wget -qO- http://wa-status:8080/healthz
 ```
 
-- **502 / no upstream** → container tidak join `emha_shared`, atau nama/port berubah.
-- **Sertifikat gagal** → A record belum ada / belum propagasi.
-- **wasm gagal load** → cek `Content-Type: application/wasm` dan header COOP/COEP
-  ikut sampai di response (`curl -sI https://wastatus.emha.space/ffmpeg/ffmpeg-core.wasm`).
-- **Update tidak kelihatan** → asset Vite di-cache immutable setahun; `index.html`
-  `no-cache` jadi normalnya langsung ikut. Hard refresh kalau ragu.
+- **502 / no upstream** -> container tidak join `emha_shared`, atau nama/port berubah.
+- **404 setelah deploy portal** -> route Caddy kehapus, lihat peringatan di atas.
+- **wasm gagal load** -> cek `Content-Type: application/wasm` + COOP/COEP sampai ke
+  klien: `curl -sI https://wastatus.emha.space/ffmpeg/ffmpeg-core.wasm`.
+- **Update tidak kelihatan** -> aset Vite di-cache immutable setahun, tapi
+  `index.html` `no-cache` jadi normalnya langsung ikut. Hard refresh kalau ragu.
