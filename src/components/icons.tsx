@@ -93,3 +93,90 @@ export function IconAlert(props: IconProps) {
     </Icon>
   )
 }
+
+export function IconChevron(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9.5 6 6 6-6" />
+    </Icon>
+  )
+}
+
+/** Corner marks - the framing / aspect section. */
+export function IconFrame(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9" />
+      <path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9" />
+      <path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15" />
+      <path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" />
+    </Icon>
+  )
+}
+
+export function IconClock(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 1.75" />
+    </Icon>
+  )
+}
+
+/** Gauge needle - the quality / bitrate section. */
+export function IconGauge(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 17.5a8.5 8.5 0 1 1 16 0" />
+      <path d="M12 17.5 15.5 10" />
+    </Icon>
+  )
+}
+
+export function IconWave(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 11v2" />
+      <path d="M8 8.5v7" />
+      <path d="M12 5.5v13" />
+      <path d="M16 8.5v7" />
+      <path d="M20 11v2" />
+    </Icon>
+  )
+}
+
+export function IconTerminal(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+      <path d="m7.5 10 2.5 2-2.5 2" />
+      <path d="M13 14.5h3.5" />
+    </Icon>
+  )
+}
+
+/** Closed padlock - the "nothing leaves this device" promise. */
+export function IconLock(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" />
+      <path d="M8 10.5V7.75a4 4 0 1 1 8 0v2.75" />
+    </Icon>
+  )
+}
+
+export function IconBolt(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 2.5 5 13.5h6l-1 8 8-11h-6l1-8Z" />
+    </Icon>
+  )
+}
+
+export function IconSparkle(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9 12 3.5Z" />
+    </Icon>
+  )
+}

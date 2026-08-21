@@ -1,56 +1,68 @@
 import type { ConversionResult, SourceMeta, Stage } from '../types'
-import { Badge } from './ui'
+import { Badge, Note } from './ui'
 import { IconDownload, IconInfo, IconLayers, IconRefresh } from './icons'
 import { saveAllNatively, saveNatively } from '../lib/engine'
 import { WA_HARD_LIMIT_BYTES } from '../lib/presets'
 import { formatBytes, formatDuration, formatFps } from '../lib/format'
 
 export function SourceInfo({ meta }: { meta: SourceMeta }) {
-  const rows: [string, string][] = [
-    ['File', meta.name],
+  const stats: [string, string][] = [
     ['Durasi', formatDuration(meta.duration)],
-    ['Resolusi', `${meta.width}x${meta.height}`],
+    ['Resolusi', `${meta.width}×${meta.height}`],
     ['FPS', formatFps(meta.fps)],
     ['Codec', meta.codec ?? '—'],
     ['Ukuran', formatBytes(meta.size)],
   ]
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm">
-      {rows.map(([k, v]) => (
-        <div key={k} className="flex items-baseline justify-between gap-2">
-          <dt className="text-slate-400">{k}</dt>
-          <dd className="truncate font-medium text-slate-100" title={v}>
-            {v}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="slab overflow-hidden">
+      <div className="flex items-center gap-2.5 border-b border-white/[0.05] px-4 py-3">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-wa-green" />
+        <span className="truncate text-xs font-medium text-mist-100" title={meta.name}>
+          {meta.name}
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-px bg-white/[0.05] sm:grid-cols-3">
+        {stats.map(([k, v]) => (
+          <div key={k} className="bg-ink-900/90 px-4 py-2.5">
+            <dt className="text-[10px] uppercase tracking-[0.13em] text-mist-500">{k}</dt>
+            <dd className="tnum truncate text-[13px] font-medium text-mist-100" title={v}>
+              {v}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
 export function ProgressBar({ stage }: { stage: Stage }) {
   if (stage.kind === 'loading-engine' || stage.kind === 'probing') {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
-        <span className="inline-block animate-pulse">
-          {stage.kind === 'loading-engine' ? 'Memuat mesin FFmpeg (~32 MB, sekali saja)...' : 'Membaca metadata video...'}
+      <div className="flex items-center gap-2.5 text-xs text-mist-300 animate-fade">
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-wa-green/70" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-wa-green" />
         </span>
+        {stage.kind === 'loading-engine'
+          ? 'Memuat mesin FFmpeg (~32 MB, sekali saja)…'
+          : 'Membaca metadata video…'}
       </div>
     )
   }
   if (stage.kind !== 'converting') return null
   const pct = Math.round(stage.progress * 100)
   return (
-    <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-slate-200">{stage.label}</span>
-        <span className="font-mono text-slate-400">{pct}%</span>
+    <div className="space-y-2 animate-fade">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-mist-200">{stage.label}</span>
+        <span className="tnum font-mono text-mist-400">{pct}%</span>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+      <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-ink-800 shadow-dent">
         <div
-          className="h-full rounded-full bg-wa-green transition-[width] duration-200"
+          className="h-full rounded-full bg-gradient-to-r from-wa-teal to-wa-green transition-[width] duration-300 ease-fluid"
           style={{ width: `${pct}%` }}
         />
+        <span className="absolute inset-y-0 -left-1/4 w-1/4 animate-sweep bg-gradient-to-r from-transparent via-white/25 to-transparent" />
       </div>
     </div>
   )
@@ -69,15 +81,21 @@ async function triggerDownload(result: ConversionResult) {
 
 function PartCard({ result, solo }: { result: ConversionResult; solo: boolean }) {
   const pass = result.size <= WA_HARD_LIMIT_BYTES
-  const range = `${formatDuration(result.start)} - ${formatDuration(result.start + result.duration)}`
+  const range = `${formatDuration(result.start)} – ${formatDuration(result.start + result.duration)}`
 
   return (
-    <div className={solo ? 'space-y-3' : 'space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3'}>
+    <div
+      className={
+        solo
+          ? 'space-y-3'
+          : 'space-y-3 rounded-2xl border border-white/[0.06] bg-ink-950/50 p-3.5 transition-colors duration-200 hover:border-white/[0.12]'
+      }
+    >
       {solo ? null : (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-white">
+          <span className="text-xs font-semibold text-white">
             Bagian {result.part}
-            <span className="ml-1.5 font-normal text-slate-400">{range}</span>
+            <span className="tnum ml-1.5 font-normal text-mist-400">{range}</span>
           </span>
           <Badge tone={pass ? 'pass' : 'over'}>{formatBytes(result.size)}</Badge>
         </div>
@@ -87,19 +105,23 @@ function PartCard({ result, solo }: { result: ConversionResult; solo: boolean })
         src={result.url}
         controls
         playsInline
-        className={`mx-auto aspect-[9/16] w-full rounded-xl bg-black ${solo ? 'max-w-[280px]' : 'max-w-[200px]'}`}
+        className={`mx-auto aspect-[9/16] w-full rounded-xl bg-black ring-1 ring-white/[0.08] ${
+          solo ? 'max-w-[260px]' : 'max-w-[200px]'
+        }`}
       />
 
-      <p className="text-xs text-slate-500">
-        {result.videoBitrate} kbps video · {result.duration.toFixed(1)} s
-        {result.attempts > 1 ? ` · ${result.attempts - 1}x re-encode otomatis` : ''}
-        {pass ? '' : ' · masih di atas 16 MB, turunkan target ukuran atau durasi'}
+      <p className="tnum text-center text-[11px] text-mist-500">
+        {result.videoBitrate} kbps · {result.duration.toFixed(1)} s
+        {result.attempts > 1 ? ` · ${result.attempts - 1}× re-encode otomatis` : ''}
       </p>
+      {pass ? null : (
+        <Note tone="warn">Masih di atas 16 MB — turunkan target ukuran atau durasi.</Note>
+      )}
 
       <button
         type="button"
         onClick={() => void triggerDownload(result)}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-wa-green px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+        className="btn-primary w-full px-4 py-2.5"
       >
         <IconDownload className="h-4 w-4" />
         Download{solo ? '' : ` bagian ${result.part}`}
@@ -131,20 +153,20 @@ export function ResultCard({
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-white">
+    <div className="slab space-y-4 p-4 animate-rise sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold tracking-tight text-white">
           Hasil{split ? ` · ${results.length} bagian` : ''}
         </h2>
         <Badge tone={allPass ? 'pass' : 'over'}>
-          {allPass ? 'PASS' : 'OVER'} · {formatBytes(split ? totalSize : results[0].size)}
+          {allPass ? 'Lolos' : 'Kelebihan'} · {formatBytes(split ? totalSize : results[0].size)}
           {split ? ' total' : ''}
         </Badge>
       </div>
 
       {split ? (
-        <p className="flex gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
-          <IconLayers className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="flex gap-2 rounded-xl border border-wa-green/25 bg-wa-green/[0.07] px-3 py-2.5 text-[11px] leading-relaxed text-[#9fe9c2]">
+          <IconLayers className="mt-px h-3.5 w-3.5 shrink-0 opacity-80" />
           <span>
             Video dipecah jadi {results.length} bagian. Upload berurutan dari bagian 1 supaya Status
             tampil sesuai urutan.
@@ -152,7 +174,7 @@ export function ResultCard({
         </p>
       ) : null}
 
-      <div className={split ? 'grid gap-3 sm:grid-cols-2' : ''}>
+      <div className={split ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : ''}>
         {results.map((r) => (
           <PartCard key={r.filename} result={r} solo={!split} />
         ))}
@@ -163,29 +185,26 @@ export function ResultCard({
           <button
             type="button"
             onClick={() => void downloadAll()}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-wa-green px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            className="btn-primary flex-1 px-4 py-2.5"
           >
             <IconDownload className="h-4 w-4" />
             Download semua ({results.length} file)
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={onReset}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-300 hover:border-slate-500 hover:text-white"
-        >
+        <button type="button" onClick={onReset} className="btn-ghost px-4 py-2.5">
           <IconRefresh className="h-4 w-4" />
           Konversi lagi
         </button>
       </div>
 
-      <div className="flex gap-2 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400">
-        <IconInfo className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+      <div className="well flex gap-2.5 p-3.5 text-[11px] leading-relaxed text-mist-400">
+        <IconInfo className="mt-px h-4 w-4 shrink-0 text-mist-500" />
         <p>
-          <strong className="text-slate-200">Wajib untuk kualitas maksimal:</strong> tombol HD tidak
-          tersedia untuk Status, jadi Status yang diposting langsung selalu lewat jalur kompresi standar.
-          Kirim file ini dulu ke chat pribadi dengan tombol <strong>HD</strong>, baru teruskan (forward)
-          ke &ldquo;Status Saya&rdquo; - forward memakai ulang file yang sudah diunggah, tanpa encode ulang.
+          <strong className="text-mist-100">Wajib untuk kualitas maksimal:</strong> tombol HD tidak
+          tersedia untuk Status, jadi Status yang diposting langsung selalu lewat jalur kompresi
+          standar. Kirim file ini dulu ke chat pribadi dengan tombol <strong>HD</strong>, baru
+          teruskan (forward) ke &ldquo;Status Saya&rdquo; — forward memakai ulang file yang sudah
+          diunggah, tanpa encode ulang.
         </p>
       </div>
     </div>

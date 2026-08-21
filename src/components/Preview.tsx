@@ -7,7 +7,9 @@ const BOTTOM_PCT = (SAFE_ZONE.bottom / 1920) * 100
 
 /**
  * WYSIWYG 9:16 preview: CSS object-fit mirrors the ffmpeg framing filters, so
- * what the user frames here is what the crop/pad/blur filter produces.
+ * what the user frames here is what the crop/pad/blur filter produces. The
+ * device shell around it is decoration, but it is what makes the 9:16 crop
+ * read as "a phone screen" instead of "a tall box".
  */
 export function Preview({
   meta,
@@ -57,50 +59,65 @@ export function Preview({
   const zonePx = (v: number) => Math.round((v / 1920) * outH)
 
   return (
-    <div className="relative mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-slate-700">
-      {aspectMode === 'blur' ? (
-        <video
-          ref={bgRef}
-          src={meta.url}
-          muted
-          playsInline
-          className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl"
-        />
-      ) : null}
+    <div className="relative mx-auto w-full max-w-[318px]">
+      {/* Coloured spill behind the device, so it sits in the page instead of on it. */}
+      <div className="pointer-events-none absolute -inset-6 -z-10 rounded-[3rem] bg-wa-teal/10 blur-3xl" />
 
-      <video
-        ref={videoRef}
-        src={meta.url}
-        controls
-        playsInline
-        className="absolute inset-0 h-full w-full"
-        style={{ objectFit: fit, objectPosition: `${cropX * 100}% ${cropY * 100}%` }}
-      />
+      <div className="rounded-[2.1rem] border border-white/[0.1] bg-gradient-to-b from-ink-700/80 to-ink-900 p-[5px] shadow-[0_40px_70px_-30px_rgba(0,0,0,0.95),inset_0_1px_0_0_rgba(255,255,255,0.09)]">
+        <div className="relative aspect-[9/16] w-full overflow-hidden rounded-[1.75rem] bg-black">
+          {aspectMode === 'blur' ? (
+            <video
+              ref={bgRef}
+              src={meta.url}
+              muted
+              playsInline
+              className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl"
+            />
+          ) : null}
 
-      {showSafeZone ? (
-        <div className="pointer-events-none absolute inset-0">
-          <div
-            className="absolute inset-x-0 top-0 border-b border-dashed border-amber-400/70 bg-amber-400/10"
-            style={{ height: `${TOP_PCT}%` }}
-          >
-            <span className="absolute bottom-1 left-2 text-[10px] font-medium text-amber-200">
-              nama pengirim · {zonePx(SAFE_ZONE.top)}px
-            </span>
-          </div>
-          <div
-            className="absolute inset-x-0 bottom-0 border-t border-dashed border-amber-400/70 bg-amber-400/10"
-            style={{ height: `${BOTTOM_PCT}%` }}
-          >
-            <span className="absolute left-2 top-1 text-[10px] font-medium text-amber-200">
-              bar balasan · {zonePx(SAFE_ZONE.bottom)}px
-            </span>
-          </div>
-          <div
-            className="absolute inset-x-0 border border-emerald-400/40"
-            style={{ top: `${TOP_PCT}%`, bottom: `${BOTTOM_PCT}%` }}
+          <video
+            ref={videoRef}
+            src={meta.url}
+            controls
+            playsInline
+            className="absolute inset-0 h-full w-full"
+            style={{ objectFit: fit, objectPosition: `${cropX * 100}% ${cropY * 100}%` }}
           />
+
+          <div
+            className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ease-fluid ${
+              showSafeZone ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <div
+              className="absolute inset-x-0 top-0 border-b border-dashed border-amber-300/60 bg-gradient-to-b from-black/45 to-transparent"
+              style={{ height: `${TOP_PCT}%` }}
+            >
+              <span className="absolute bottom-1.5 left-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-amber-200 backdrop-blur-sm">
+                nama pengirim · {zonePx(SAFE_ZONE.top)}px
+              </span>
+            </div>
+            <div
+              className="absolute inset-x-0 bottom-0 border-t border-dashed border-amber-300/60 bg-gradient-to-t from-black/45 to-transparent"
+              style={{ height: `${BOTTOM_PCT}%` }}
+            >
+              <span className="absolute left-2 top-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-amber-200 backdrop-blur-sm">
+                bar balasan · {zonePx(SAFE_ZONE.bottom)}px
+              </span>
+            </div>
+            {/* Corner brackets read as a framing guide; a full outline reads as a bug. */}
+            <div
+              className="absolute inset-x-3"
+              style={{ top: `${TOP_PCT}%`, bottom: `${BOTTOM_PCT}%` }}
+            >
+              <span className="absolute left-0 top-0 h-4 w-4 rounded-tl-sm border-l border-t border-wa-green/70" />
+              <span className="absolute right-0 top-0 h-4 w-4 rounded-tr-sm border-r border-t border-wa-green/70" />
+              <span className="absolute bottom-0 left-0 h-4 w-4 rounded-bl-sm border-b border-l border-wa-green/70" />
+              <span className="absolute bottom-0 right-0 h-4 w-4 rounded-br-sm border-b border-r border-wa-green/70" />
+            </div>
+          </div>
         </div>
-      ) : null}
+      </div>
     </div>
   )
 }

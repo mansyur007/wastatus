@@ -3,7 +3,167 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    @apply bg-slate-950 font-sans antialiased;
+    @apply bg-ink-950 font-sans text-mist-200 antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /**
+   * Two fixed light sources behind everything. Gives the flat surfaces a
+   * direction to sit against, which is most of what separates "dark theme"
+   * from "a room with the lights low".
+   */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 34rem at 12% -12%, rgba(37, 211, 102, 0.1), transparent 62%),
+      radial-gradient(46rem 30rem at 104% -4%, rgba(18, 140, 126, 0.11), transparent 60%),
+      radial-gradient(70rem 50rem at 50% 120%, rgba(7, 94, 84, 0.09), transparent 65%);
+  }
+
+  ::selection {
+    background: rgba(37, 211, 102, 0.3);
+    color: #fff;
+  }
+
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid rgba(37, 211, 102, 0.75);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #253129 transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #253129;
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #33453a;
+    background-clip: content-box;
+  }
+
+  /* One thumb style shared by Slider and DualRange; the tracks are drawn in JSX. */
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: grab;
+  }
+  input[type='range']:active {
+    cursor: grabbing;
+  }
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 18px;
+    width: 18px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 3px 10px rgba(0, 0, 0, 0.55);
+    transition:
+      transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.2s ease;
+  }
+  input[type='range']::-moz-range-thumb {
+    height: 18px;
+    width: 18px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 3px 10px rgba(0, 0, 0, 0.55);
+    transition:
+      transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.2s ease;
+  }
+  input[type='range']:hover::-webkit-slider-thumb {
+    transform: scale(1.14);
+  }
+  input[type='range']:hover::-moz-range-thumb {
+    transform: scale(1.14);
+  }
+  input[type='range']:active::-webkit-slider-thumb,
+  input[type='range']:focus-visible::-webkit-slider-thumb {
+    box-shadow:
+      0 0 0 7px rgba(37, 211, 102, 0.2),
+      0 3px 10px rgba(0, 0, 0, 0.55);
+  }
+  input[type='range']:active::-moz-range-thumb,
+  input[type='range']:focus-visible::-moz-range-thumb {
+    box-shadow:
+      0 0 0 7px rgba(37, 211, 102, 0.2),
+      0 3px 10px rgba(0, 0, 0, 0.55);
+  }
+  input[type='range']:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Numbers never reflow while they tick. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer components {
+  /** The one surface recipe. Everything raised in the app uses it. */
+  .slab {
+    @apply rounded-2xl border border-white/[0.06] bg-ink-900/70 shadow-slab backdrop-blur-sm;
+  }
+  /** A well: recessed area inside a slab (inputs, code, nested groups). */
+  .well {
+    @apply rounded-xl border border-white/[0.05] bg-ink-950/60 shadow-dent;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-white/[0.07] bg-ink-850 px-3.5 py-2.5 text-sm text-mist-100
+           shadow-dent outline-none transition duration-200 ease-fluid
+           hover:border-white/[0.12]
+           focus:border-wa-green/60 focus:ring-4 focus:ring-wa-green/10
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl text-sm font-semibold
+           transition duration-200 ease-fluid active:scale-[0.985]
+           disabled:pointer-events-none disabled:opacity-45;
+  }
+  .btn-primary {
+    @apply btn bg-wa-green text-ink-950 shadow-accent
+           hover:bg-[#31e075] hover:shadow-[0_14px_38px_-10px_rgba(37,211,102,0.7)];
+  }
+  .btn-ghost {
+    @apply btn border border-white/[0.08] bg-white/[0.02] text-mist-200
+           hover:border-white/[0.16] hover:bg-white/[0.05] hover:text-mist-100;
   }
 }
