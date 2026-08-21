@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('waNative', {
 
   reveal: (filePath: string) => ipcRenderer.invoke('wa:reveal', filePath),
 
+  /** Arms the "kerja belum selesai" confirm on window close. */
+  setExitGuard: (on: boolean) => ipcRenderer.send('wa:exit-guard', on),
+
   onProgress: (cb: (p: { fraction: number; label: string }) => void) => {
     const handler = (_e: unknown, payload: { fraction: number; label: string }) => cb(payload)
     ipcRenderer.on('wa:progress', handler)

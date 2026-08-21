@@ -10,9 +10,11 @@ import { defaultSettings } from './lib/presets'
 import {
   convert,
   describeEngine,
+  isNative,
   prepareEngine,
   probeExtra,
   probeWithVideoElement,
+  setNativeExitGuard,
 } from './lib/engine'
 import type { EngineDescription } from './lib/engine'
 import { formatBytes } from './lib/format'
@@ -141,6 +143,29 @@ export default function App() {
 
   const busy =
     stage.kind === 'converting' || stage.kind === 'loading-engine' || stage.kind === 'probing'
+
+  /**
+   * Everything lives in memory: a refresh or a closed tab throws away the
+   * decoded source, the settings, and any finished part that has not been
+   * downloaded yet. Guard the exit from the moment a video is loaded.
+   */
+  const guardExit = meta !== null || busy
+  useEffect(() => {
+    if (!guardExit) return
+    // Electron never shows Chromium's beforeunload dialog - it would just
+    // cancel the close - so the desktop build confirms in the main process.
+    if (isNative) {
+      setNativeExitGuard(true)
+      return () => setNativeExitGuard(false)
+    }
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // Legacy channel: older engines need returnValue set to show the prompt.
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [guardExit])
   const parts = settings ? partCount(settings) : 1
   const native = engine?.kind === 'native'
 

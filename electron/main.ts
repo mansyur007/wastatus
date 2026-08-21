@@ -18,13 +18,26 @@ const exe = (n: string) => join(binDir, process.platform === 'win32' ? n + '.exe
 const bins: Binaries = { ffmpeg: exe('ffmpeg'), ffprobe: exe('ffprobe') }
 const binariesPresent = () => existsSync(bins.ffmpeg) && existsSync(bins.ffprobe)
 
+// electron-builder stamps the packaged exe from build/icon.ico; unpackaged runs
+// need the file handed to the window directly.
+const windowIcon = join(__dirname, '..', 'build', 'icon.png')
+
+/**
+ * Set by the renderer while a video is loaded or a conversion is running.
+ * Electron never shows Chromium's own beforeunload dialog - it would silently
+ * cancel the close instead - so the desktop build asks here.
+ */
+let exitGuard = false
+let confirmedClose = false
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 900,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: '#020617',
+    backgroundColor: '#070A09',
+    ...(app.isPackaged || !existsSync(windowIcon) ? {} : { icon: windowIcon }),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
@@ -35,6 +48,28 @@ function createWindow() {
   })
   if (DEV_URL) win.loadURL(DEV_URL)
   else win.loadFile(join(__dirname, '..', 'dist', 'index.html'))
+  win.on('close', (e) => {
+    if (!exitGuard || confirmedClose) return
+    e.preventDefault()
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Batal', 'Tutup'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Tutup aplikasi?',
+      message: 'Video dan hasil konversi akan hilang',
+      detail: 'Proses berjalan di perangkat ini dan tidak tersimpan otomatis. Simpan hasilnya dulu sebelum menutup.',
+    })
+    if (choice === 1) {
+      confirmedClose = true
+      win.close()
+    }
+  })
+  win.on('closed', () => {
+    exitGuard = false
+    confirmedClose = false
+  })
+
   // Keep navigation inside the app; anything external opens in the real browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -88,6 +123,10 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('wa:reveal', (_e, filePath: string) => shell.showItemInFolder(filePath))
+
+  ipcMain.on('wa:exit-guard', (_e, on: boolean) => {
+    exitGuard = Boolean(on)
+  })
 
   // Printed once so a headless run still shows which engine the app will use.
   console.log(

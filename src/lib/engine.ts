@@ -36,6 +36,7 @@ interface NativeApi {
   save(filename: string, bytes: Uint8Array): Promise<string | null>
   saveAll(files: { filename: string; bytes: Uint8Array }[]): Promise<string | null>
   reveal(filePath: string): Promise<void>
+  setExitGuard?(on: boolean): void
   onProgress(cb: (p: { fraction: number; label: string }) => void): () => void
 }
 
@@ -59,6 +60,14 @@ declare global {
 const native = typeof window !== 'undefined' ? window.waNative : undefined
 
 export const isNative = Boolean(native)
+
+/**
+ * Arms the desktop close confirm. No-op in the browser, where the same job is
+ * done by a beforeunload listener.
+ */
+export function setNativeExitGuard(on: boolean): void {
+  native?.setExitGuard?.(on)
+}
 
 export type EngineKind = 'native' | 'wasm'
 
