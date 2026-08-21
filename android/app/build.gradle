@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+// Signing rilis dibaca dari android/keystore.properties, yang di-gitignore:
+// repo ini publik, jadi keystore dan passwordnya hidup di luar repo.
+// Kalau file itu tidak ada - clone bersih, runner CI - build release tetap
+// jalan dan hasilnya sekadar unsigned, bukan gagal.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace = "com.mansyur.wastatus"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +26,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            release {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

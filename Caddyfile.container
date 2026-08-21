@@ -43,6 +43,12 @@
 	@wasm path *.wasm
 	header @wasm Content-Type "application/wasm"
 
+	# APK Android. Namanya sengaja stabil supaya tautan di halaman tidak perlu
+	# diganti tiap rilis - konsekuensinya harus selalu divalidasi ulang, kalau
+	# tidak ada yang mengunduh APK basi dari cache browser.
+	@downloads path /downloads/*
+	header @downloads Cache-Control "no-cache"
+
 	@html path / /index.html
 	header @html Cache-Control "no-cache"
 

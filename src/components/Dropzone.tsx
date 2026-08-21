@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { IconAlert, IconBolt, IconFrame, IconLock, IconPhoneVideo } from './icons'
+import { IconAlert, IconBolt, IconDownload, IconFrame, IconLock, IconPhoneVideo } from './icons'
 
 export const ACCEPTED = ['mp4', 'mov', 'mkv', 'webm', 'avi', '3gp', 'm4v']
 const ACCEPT_ATTR = ACCEPTED.map((e) => `.${e}`).join(',') + ',video/*'
@@ -8,6 +8,11 @@ export function isAccepted(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
   return ACCEPTED.includes(ext) || file.type.startsWith('video/')
 }
+
+/** Nama file APK sengaja tetap supaya tautannya tidak berubah tiap rilis;
+ *  Caddy menyajikan /downloads/* dengan no-cache agar tidak ada yang dapat
+ *  APK basi. Ukurannya diperbarui saat APK dibangun ulang. */
+const APK = { href: './downloads/wa-status.apk', size: '13.1 MB', minAndroid: 'Android 7+' }
 
 const FACTS: { icon: typeof IconLock; label: string; value: string }[] = [
   { icon: IconLock, label: 'Privasi', value: 'Diproses di perangkat' },
@@ -140,6 +145,21 @@ export function Dropzone({ onFile, error }: { onFile: (f: File) => void; error?:
             </span>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-4 text-center sm:flex-row sm:justify-between sm:text-left">
+        <span className="text-xs text-mist-400">
+          <span className="block text-sm font-medium text-mist-100">Ada versi Android-nya</span>
+          Konversi langsung di HP, tanpa perlu buka browser. {APK.size} - {APK.minAndroid}
+        </span>
+        <a
+          href={APK.href}
+          download
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-wa-green/40 bg-wa-green/10 px-4 py-2.5 text-sm font-semibold text-wa-green transition-colors duration-200 hover:bg-wa-green/20"
+        >
+          <IconDownload className="h-4 w-4" />
+          Unduh APK
+        </a>
       </div>
     </div>
   )

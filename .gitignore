@@ -26,3 +26,9 @@ tsconfig.tsbuildinfo
 # nama container, lokasi file key). Repo ini publik, jadi keduanya lokal saja.
 DEPLOY.md
 scripts/deploy-vps.sh
+
+# Signing Android: keystore + passwordnya TIDAK PERNAH masuk repo (repo publik).
+# Keystore disimpan di luar repo; android/keystore.properties menunjuk ke sana.
+android/keystore.properties
+*.jks
+*.keystore
