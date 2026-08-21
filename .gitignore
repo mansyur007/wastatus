@@ -22,5 +22,7 @@ tsconfig.tsbuildinfo
 .DS_Store
 ._*
 
-# Runbook deploy: memuat detail estate (IP, path, nama container) — repo publik.
+# Runbook + script deploy: memuat detail estate (IP VPS, user root, path /opt,
+# nama container, lokasi file key). Repo ini publik, jadi keduanya lokal saja.
 DEPLOY.md
+scripts/deploy-vps.sh
