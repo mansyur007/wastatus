@@ -21,3 +21,6 @@ tsconfig.tsbuildinfo
 .body.txt
 .DS_Store
 ._*
+
+# Runbook deploy: memuat detail estate (IP, path, nama container) — repo publik.
+DEPLOY.md
