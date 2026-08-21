@@ -23,7 +23,35 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Lewat env, bukan interpolasi ${{ }} langsung ke dalam teks perintah:
+    # nilai secret tidak ikut disusun jadi baris shell, jadi karakter apa pun
+    # di dalamnya tidak bisa mengubah perintah yang dijalankan.
+    #
+    # VPS_SSH_KEY sengaja TIDAK ada di sini. Env level job terbaca oleh semua
+    # step, termasuk `npm ci` - private key tidak perlu berada dalam jangkauan
+    # skrip postinstall dependensi. Key hanya disuntikkan ke step yang memakainya.
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
     steps:
+      # Tanpa ini, secret yang hilang baru terasa di `ssh-keyscan -H ""` yang
+      # gagal dengan `exit code 1` telanjang - setelah membuang ~40 detik di
+      # npm ci. Deploy repo ini pernah merah tiga kali berturut-turut karena
+      # kegagalan itu tidak menyebut sebabnya.
+      - name: Preflight - pastikan secret deploy terpasang
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          missing=()
+          [ -n "$VPS_HOST" ] || missing+=(VPS_HOST)
+          [ -n "$VPS_USER" ] || missing+=(VPS_USER)
+          [ -n "$VPS_SSH_KEY" ] || missing+=(VPS_SSH_KEY)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Secret deploy belum terpasang: ${missing[*]}. Set lewat Settings > Secrets and variables > Actions, atau 'gh secret set <NAMA> --repo <owner>/<repo>', lalu jalankan ulang workflow ini."
+            exit 1
+          fi
+          echo "Preflight OK: VPS_HOST, VPS_USER, dan VPS_SSH_KEY terisi."
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -37,25 +65,27 @@ jobs:
           npm run build
 
       - name: Setup SSH key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Sync build + container files to VPS
         run: |
           rsync -az --delete \
             -e "ssh -i ~/.ssh/deploy" \
-            dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/wa-status/dist/"
+            dist/ "$VPS_USER@$VPS_HOST:/opt/wa-status/dist/"
           rsync -az \
             -e "ssh -i ~/.ssh/deploy" \
             Dockerfile Caddyfile.container docker-compose.prod.yml .dockerignore \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/wa-status/"
+            "$VPS_USER@$VPS_HOST:/opt/wa-status/"
 
       - name: Build & up on VPS
         run: |
-          ssh -i ~/.ssh/deploy "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash -se <<'REMOTE'
+          ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" bash -se <<'REMOTE'
           set -e
           cd /opt/wa-status
           docker compose -f docker-compose.prod.yml up -d --build
@@ -64,7 +94,7 @@ jobs:
 
       - name: Smoke test (wastatus.emha.space lewat emha-caddy)
         run: |
-          ssh -i ~/.ssh/deploy "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+          ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
             "sleep 5; curl -fsS --retry 5 --retry-delay 3 --retry-connrefused \
                --resolve wastatus.emha.space:443:127.0.0.1 https://wastatus.emha.space/ -o /dev/null \
              && echo 'Smoke OK: wa-status live'"
