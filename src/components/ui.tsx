@@ -1,4 +1,5 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { ReactNode } from 'react'
 import { IconAlert, IconCheck, IconChevron, IconInfo } from './icons'
 
@@ -43,14 +44,39 @@ export function Section({
   children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  // Measured pixel height, not the 1fr/0fr grid-track trick: some Chromium
+  // builds never resolve an animated grid-template-rows back to 0 once a
+  // section has opened to its real content size once, so the row freezes
+  // there and the content just fades out on top of a full-height empty
+  // container. A measured height transitions the same in every browser.
+  const [height, setHeight] = useState<number | undefined>(defaultOpen ? undefined : 0)
+  const contentRef = useRef<HTMLDivElement>(null)
   const id = useId()
+
+  const toggle = () => {
+    const content = contentRef.current
+    if (open) {
+      // Height only animates between two concrete px values, never from
+      // 'auto' - freeze the current rendered height as its own commit
+      // first, then collapse to 0 so the transition has something to run.
+      if (content) flushSync(() => setHeight(content.getBoundingClientRect().height))
+      setHeight(0)
+      setOpen(false)
+    } else {
+      // Content is already laid out at its natural size - just clipped to
+      // 0 by the closed parent - so the open target is known up front.
+      if (content) setHeight(content.getBoundingClientRect().height)
+      setOpen(true)
+    }
+  }
+
   return (
     <section className="overflow-clip rounded-2xl border border-white/[0.06] bg-white/[0.015] transition-colors duration-300 ease-fluid hover:border-white/[0.1]">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={id}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         className="group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors duration-200 hover:bg-white/[0.025]"
       >
         <span
@@ -74,15 +100,22 @@ export function Section({
           }`}
         />
       </button>
-      {/* 1fr <-> 0fr keeps the collapse smooth without measuring heights. */}
       <div
         id={id}
-        className={`grid transition-[grid-template-rows,opacity,visibility] duration-300 ease-fluid ${
-          open ? 'grid-rows-[1fr] opacity-100' : 'invisible grid-rows-[0fr] opacity-0'
+        style={{ height: open ? height : 0 }}
+        className={`overflow-hidden transition-[height,opacity,visibility] duration-300 ease-fluid ${
+          open ? 'opacity-100' : 'invisible opacity-0'
         }`}
+        onTransitionEnd={(e) => {
+          // Release back to auto once the open transition settles, so a
+          // conditional field appearing later (e.g. switching aspect mode)
+          // keeps resizing the section on its own instead of clipping
+          // against a height frozen at click time.
+          if (e.propertyName === 'height' && open) setHeight(undefined)
+        }}
       >
-        <div className="overflow-clip">
-          <div className="space-y-5 border-t border-white/[0.05] px-4 pb-5 pt-4">{children}</div>
+        <div ref={contentRef} className="space-y-5 border-t border-white/[0.05] px-4 pb-5 pt-4">
+          {children}
         </div>
       </div>
     </section>
