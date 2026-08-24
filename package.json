@@ -12,7 +12,9 @@
     "electron:dev": "node scripts/build-electron.mjs && electron . --dev",
     "electron:start": "npm run build && node scripts/build-electron.mjs && electron .",
     "electron:build": "npm run build && node scripts/build-electron.mjs && electron-builder --win",
-    "typecheck": "tsc -b && tsc -p tsconfig.electron.json"
+    "typecheck": "tsc -b && tsc -p tsconfig.electron.json",
+    "android:sync": "npm run build && cap sync android && node scripts/strip-android-assets.mjs",
+    "android:build": "npm run android:sync && cd android && gradlew assembleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

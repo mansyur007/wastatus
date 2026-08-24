@@ -3,31 +3,39 @@ import { outputFps, targetDimensions } from './presets'
 import { audioKbps, clipDuration } from './bitrate'
 
 /**
- * ffmpeg.wasm is single-threaded, so the x264 preset trades encode time for
- * compression efficiency. A slower preset packs more quality into the same
- * bitrate, which matters because the size budget is fixed at 15 MB per part.
+ * The x264 preset trades encode time for compression efficiency. It matters far
+ * less than it looks: benchmarking a 1080p source showed decode alone accounts
+ * for essentially all of the wall clock, so 'veryfast' and 'medium' land within
+ * noise of each other. The knob stays because it does still move the file size,
+ * which is the thing actually under a 15 MB budget.
  */
 export const X264_PRESETS: { value: X264Preset; label: string; hint: string }[] = [
-  { value: 'veryfast', label: 'Cepat', hint: 'encode tercepat, file paling boros' },
-  { value: 'faster', label: 'Seimbang', hint: 'default - sedikit lebih lama, hasil lebih rapi' },
-  { value: 'medium', label: 'Kualitas', hint: 'paling efisien, encode ~2x lebih lama' },
+  { value: 'veryfast', label: 'Cepat', hint: 'file paling boros' },
+  { value: 'faster', label: 'Seimbang', hint: 'default - hasil lebih rapi' },
+  { value: 'medium', label: 'Kualitas', hint: 'paling efisien, sedikit lebih lama' },
 ]
 
 export interface ArgOptions {
   input: string
+  /** A filename, or a printf pattern like 'part%03d.mp4' when seamSeconds is set. */
   output: string
   settings: Settings
   meta: MediaInfo
-  /** kbps, target-size mode only. */
+  /** kbps. Fed to -maxrate as the ceiling the part must not exceed. */
   videoBitrate: number
-  /** 1 = analysis pass (no audio, no output file), 2 = final encode. */
-  pass?: 1 | 2
   /** Slice to encode. Defaults to the whole trim window. */
   segment?: Segment
-  /** x264 stats file, unique per part so pass 1 never leaks across parts. */
-  passlog?: string
-  /** Sink for the pass-1 encode. emscripten has /dev/null; Windows has NUL. */
-  nullPath?: string
+  /**
+   * Cut the run into parts of this many seconds using the segment muxer. One
+   * ffmpeg invocation then produces every part from a single decode pass,
+   * instead of one invocation - and one decode - per part.
+   */
+  seamSeconds?: number
+  /**
+   * Where the segment muxer writes its manifest. Relative to the ffmpeg process
+   * cwd, so the desktop build has to point it at its own temp directory.
+   */
+  segmentList?: string
 }
 
 interface Filter {
@@ -75,17 +83,49 @@ export function buildFilter(s: Settings, meta?: MediaInfo): Filter {
   }
 }
 
+/** -ss/-i/-t. Input-side seek: fast, and accurate enough for a Status clip. */
+function inputArgs(o: ArgOptions): string[] {
+  const duration = o.segment ? o.segment.duration : clipDuration(o.settings)
+  const start = o.segment ? o.segment.start : o.settings.trimStart
+  const args: string[] = []
+  if (start > 0) args.push('-ss', start.toFixed(3))
+  args.push('-i', o.input, '-t', duration.toFixed(3))
+  return args
+}
+
+/** Where the segment muxer writes its "filename,start,end" manifest. */
+export const SEGMENT_LIST = 'segments.csv'
+
+/**
+ * Muxer flags that turn one output into a numbered series of parts.
+ *
+ * The CSV manifest matters: with `-c copy` the cuts land on the source's own
+ * keyframes, so the real part boundaries drift from the nominal seam. Reading
+ * them back beats guessing, and costs nothing.
+ */
+function segmentMuxerArgs(seam: number, list: string): string[] {
+  return [
+    '-f', 'segment',
+    '-segment_time', String(seam),
+    // Without a tolerance the muxer misses the keyframe it was handed: the
+    // frame forced at exactly t=seam rounds a hair below seam in the muxer
+    // timebase, fails the >= test, and the cut slips a whole GOP late (a
+    // 30 s part came out 32 s). 0.1 s is far under the 2 s GOP, so it can
+    // only ever match the keyframe that was forced for this seam.
+    '-segment_time_delta', '0.1',
+    '-reset_timestamps', '1',
+    '-segment_format', 'mp4',
+    '-segment_format_options', 'movflags=+faststart',
+    '-segment_list', list,
+    '-segment_list_type', 'csv',
+  ]
+}
+
 export function buildArgs(o: ArgOptions): string[] {
-  const { settings: s, meta, input, output, videoBitrate, pass, segment } = o
-  const duration = segment ? segment.duration : clipDuration(s)
-  const start = segment ? segment.start : s.trimStart
+  const { settings: s, meta, output, videoBitrate, seamSeconds } = o
   const filter = buildFilter(s, meta)
   const fps = outputFps(s.fpsMode, meta.fps)
-  const args: string[] = []
-
-  // Input-side seek: fast, and accurate enough for a Status clip.
-  if (start > 0) args.push('-ss', start.toFixed(3))
-  args.push('-i', input, '-t', duration.toFixed(3))
+  const args: string[] = inputArgs(o)
 
   if (filter.complex) {
     args.push('-filter_complex', filter.chain, '-map', '[v]')
@@ -93,7 +133,7 @@ export function buildArgs(o: ArgOptions): string[] {
     args.push('-vf', filter.chain, '-map', '0:v:0')
   }
 
-  const withAudio = pass !== 1 && meta.hasAudio !== false
+  const withAudio = meta.hasAudio !== false
   if (withAudio) args.push('-map', '0:a:0?')
 
   args.push(
@@ -106,12 +146,15 @@ export function buildArgs(o: ArgOptions): string[] {
   )
 
   if (s.encodingMode === 'size') {
+    // Capped CRF, not two-pass ABR. Two-pass bought an exact landing on the
+    // budget by decoding the whole source a second time, and benchmarking
+    // showed decode to be essentially all of the wall clock. Capped CRF keeps
+    // the guarantee that actually matters - never exceed the budget - in a
+    // single pass, and simply comes in under it when the content is cheap.
     args.push(
-      '-b:v', `${videoBitrate}k`,
-      '-maxrate', `${Math.round(videoBitrate * 1.45)}k`,
+      '-crf', String(s.crf),
+      '-maxrate', `${videoBitrate}k`,
       '-bufsize', `${Math.round(videoBitrate * 2)}k`,
-      '-pass', String(pass ?? 2),
-      '-passlogfile', o.passlog ?? 'wapass',
     )
   } else {
     args.push('-crf', String(s.crf))
@@ -120,9 +163,10 @@ export function buildArgs(o: ArgOptions): string[] {
     }
   }
 
-  if (pass === 1) {
-    args.push('-an', '-sn', '-dn', '-f', 'null', o.nullPath ?? '/dev/null')
-    return args
+  if (seamSeconds) {
+    // Every part must open on an IDR frame: the segment muxer can only cut on
+    // a keyframe, and a part starting mid-GOP would not decode on its own.
+    args.push('-force_key_frames', `expr:gte(t,n_forced*${seamSeconds})`)
   }
 
   if (withAudio) {
@@ -137,15 +181,39 @@ export function buildArgs(o: ArgOptions): string[] {
   }
 
   args.push('-sn', '-dn', '-map_metadata', '-1')
-  if (s.faststart) args.push('-movflags', '+faststart')
+  if (seamSeconds) {
+    args.push(...segmentMuxerArgs(seamSeconds, o.segmentList ?? SEGMENT_LIST))
+  } else if (s.faststart) {
+    args.push('-movflags', '+faststart')
+  }
   args.push('-y', output)
   return args
 }
 
+/**
+ * The no-re-encode route: remux the selected window straight through. Cuts land
+ * on the source's own keyframes, so a seam can sit up to one GOP past the
+ * nominal mark - the trade for finishing in milliseconds instead of hours.
+ */
+export function buildCopyArgs(o: ArgOptions): string[] {
+  const args: string[] = inputArgs(o)
+  args.push('-map', '0:v:0')
+  if (o.meta.hasAudio !== false) args.push('-map', '0:a:0?')
+  args.push('-c', 'copy', '-avoid_negative_ts', 'make_zero', '-sn', '-dn', '-map_metadata', '-1')
+  if (o.seamSeconds) {
+    args.push(...segmentMuxerArgs(o.seamSeconds, o.segmentList ?? SEGMENT_LIST))
+  } else if (o.settings.faststart) {
+    args.push('-movflags', '+faststart')
+  }
+  args.push('-y', o.output)
+  return args
+}
+
 /** Human-readable command for the "FFmpeg command" disclosure in the panel. */
-export function previewCommand(o: ArgOptions): string {
+export function previewCommand(o: ArgOptions, kind: 'copy' | 'encode' = 'encode'): string {
   const quote = (a: string) => (/[\s[\];]/.test(a) ? `"${a}"` : a)
-  return `ffmpeg ${buildArgs(o).map(quote).join(' ')}`
+  const args = kind === 'copy' ? buildCopyArgs(o) : buildArgs(o)
+  return `ffmpeg ${args.map(quote).join(' ')}`
 }
 
 export function outputFilename(

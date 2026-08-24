@@ -26,6 +26,7 @@ interface NativePart {
   totalParts: number
   start: number
   duration: number
+  copied?: boolean
 }
 
 interface NativeApi {
@@ -46,9 +47,12 @@ interface SerialisableMeta {
   duration: number
   width: number
   height: number
+  size: number
   fps?: number
   codec?: string
+  audioCodec?: string
   hasAudio?: boolean
+  videoKbps?: number
 }
 
 declare global {
@@ -77,28 +81,33 @@ export interface EngineDescription {
   detail: string
 }
 
-let described: EngineDescription | null = null
+let nativeInfo: NativeInfo | null | undefined
 
+/** Which engine will actually do the work, for the badge in the header. */
 export async function describeEngine(): Promise<EngineDescription> {
-  if (described) return described
   if (native) {
-    const info = await native.info().catch(() => null)
-    described = info?.ready
-      ? { kind: 'native', label: 'FFmpeg native', detail: info.version || 'binary bawaan aplikasi' }
-      : {
-          kind: 'wasm',
-          label: 'ffmpeg.wasm',
-          detail: 'FFmpeg bawaan tidak ditemukan, kembali ke mesin wasm',
-        }
-  } else {
-    described = { kind: 'wasm', label: 'ffmpeg.wasm', detail: 'berjalan di dalam browser' }
+    if (nativeInfo === undefined) nativeInfo = await native.info().catch(() => null)
+    if (nativeInfo?.ready) {
+      return {
+        kind: 'native',
+        label: 'FFmpeg native',
+        detail: nativeInfo.version || 'binary bawaan aplikasi',
+      }
+    }
+    return {
+      kind: 'wasm',
+      label: 'ffmpeg.wasm',
+      detail: 'FFmpeg bawaan tidak ditemukan, kembali ke mesin wasm',
+    }
   }
-  return described
+  return { kind: 'wasm', label: 'ffmpeg.wasm', detail: 'berjalan di dalam browser' }
 }
 
 /** True only when the native binary is present and usable. */
 async function nativeReady(): Promise<boolean> {
-  return (await describeEngine()).kind === 'native'
+  if (!native) return false
+  if (nativeInfo === undefined) nativeInfo = await native.info().catch(() => null)
+  return Boolean(nativeInfo?.ready)
 }
 
 export const probeWithVideoElement = wasm.probeWithVideoElement
@@ -128,9 +137,12 @@ const serialise = (meta: SourceMeta): SerialisableMeta => ({
   duration: meta.duration,
   width: meta.width,
   height: meta.height,
+  size: meta.size,
   fps: meta.fps,
   codec: meta.codec,
+  audioCodec: meta.audioCodec,
   hasAudio: meta.hasAudio,
+  videoKbps: meta.videoKbps,
 })
 
 export async function convert(
@@ -144,7 +156,15 @@ export async function convert(
   // A File with no path (rare: synthetic drops) still has bytes, so fall back.
   if (!inputPath) return wasm.convert(meta, settings, handlers)
 
-  const off = native!.onProgress(({ fraction, label }) => handlers.onProgress(fraction, label))
+  // The native side reports position only; the elapsed-time extrapolation that
+  // produces an ETA is identical for both engines, so it lives here.
+  const startedAt = Date.now()
+  const off = native!.onProgress(({ fraction, label }) => {
+    const p = Math.min(1, Math.max(0, fraction))
+    const elapsed = (Date.now() - startedAt) / 1000
+    const eta = p > 0.02 && elapsed > 2 ? Math.round((elapsed * (1 - p)) / p) : undefined
+    handlers.onProgress(p, label, eta)
+  })
   try {
     const parts = await native!.convert({ inputPath, settings, meta: serialise(meta) })
     return parts.map((p) => {
@@ -160,6 +180,7 @@ export async function convert(
         totalParts: p.totalParts,
         start: p.start,
         duration: p.duration,
+        copied: p.copied,
       }
     })
   } finally {
