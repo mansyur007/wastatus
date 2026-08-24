@@ -17,8 +17,17 @@ import {
   setNativeExitGuard,
 } from './lib/engine'
 import type { EngineDescription } from './lib/engine'
-import { formatBytes } from './lib/format'
-import { clipDuration, estimateSizeBytes, partCount } from './lib/bitrate'
+import { formatBytes, formatDuration } from './lib/format'
+import {
+  clipDuration,
+  encodeDuration,
+  partCount,
+  withDerivedBitrate,
+} from './lib/bitrate'
+import { buildPlan, estimatePartBytes } from './lib/plan'
+
+/** Above this many parts the run is long enough to warn about up front. */
+const MANY_PARTS = 20
 
 /** Keeps the trim window inside the source and under the duration cap. */
 function normalize(s: Settings, meta: SourceMeta): Settings {
@@ -85,17 +94,20 @@ export default function App() {
         width: basic.width,
         height: basic.height,
       }
-      setMeta(base)
-      setSettings(normalize(defaultSettings(base), base))
+      const withBitrate = withDerivedBitrate(base)
+      setMeta(withBitrate)
+      setSettings(normalize(defaultSettings(withBitrate), withBitrate))
 
       // ffprobe needs the wasm core; fps/codec arrive a moment later.
       setStage({ kind: 'loading-engine' })
       await prepareEngine()
       setStage({ kind: 'probing' })
       const extra = await probeExtra(file)
-      const merged: SourceMeta = { ...base, ...extra }
+      const merged = withDerivedBitrate({ ...base, ...extra } as SourceMeta)
       setMeta(merged)
       if (!dirtyRef.current) setSettings(normalize(defaultSettings(merged), merged))
+      // The wasm engine only learns whether it got threads once the core is up.
+      describeEngine().then(setEngine)
       setStage({ kind: 'idle' })
     } catch (e) {
       setStage({ kind: 'idle' })
@@ -132,7 +144,8 @@ export default function App() {
       await prepareEngine()
       setStage({ kind: 'converting', progress: 0, label: 'Menyiapkan' })
       const out = await convert(meta, settings, {
-        onProgress: (progress, label) => setStage({ kind: 'converting', progress, label }),
+        onProgress: (progress, label, etaSeconds) =>
+          setStage({ kind: 'converting', progress, label, etaSeconds }),
       })
       setResults(out)
       setStage({ kind: 'done' })
@@ -167,6 +180,10 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [guardExit])
   const parts = settings ? partCount(settings) : 1
+  const plan = settings && meta ? buildPlan(settings, meta) : null
+  // A stream copy keeps the source bytes, so its size follows the source, not
+  // the bitrate the encoder would have picked.
+  const perPart = settings && plan ? estimatePartBytes(plan, settings, meta ?? undefined) : 0
   const native = engine?.kind === 'native'
 
   return (
@@ -243,11 +260,33 @@ export default function App() {
                     {parts > 1 ? `${parts} bagian · per bagian` : 'Perkiraan hasil'}
                   </span>
                   <span className="tnum font-medium text-mist-200">
-                    {formatBytes(estimateSizeBytes(settings, meta))}
+                    {formatBytes(perPart)}
                     <span className="mx-1.5 text-mist-500">·</span>
-                    {clipDuration(settings).toFixed(1)} s
+                    {formatDuration(parts > 1 ? encodeDuration(settings) : clipDuration(settings))}
                   </span>
                 </div>
+
+                {parts > 1 ? (
+                  <div className="flex items-baseline justify-between gap-3 text-[11px]">
+                    <span className="text-mist-400">Total semua bagian</span>
+                    <span className="tnum font-medium text-mist-200">
+                      {formatBytes(perPart * parts)}
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* A long source turns into a lot of parts and a long run. Saying
+                    so before the click beats a progress bar that never moves. */}
+                {parts > MANY_PARTS && plan?.kind !== 'copy' ? (
+                  <p className="flex gap-2 rounded-xl border border-amber-400/25 bg-amber-500/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-amber-200/90">
+                    <IconAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {formatDuration(clipDuration(settings))} jadi {parts} bagian, dan semuanya
+                      di-encode di perangkat ini. Ini bisa makan waktu lama — biarkan tab tetap
+                      terbuka sampai selesai.
+                    </span>
+                  </p>
+                ) : null}
 
                 <button
                   type="button"

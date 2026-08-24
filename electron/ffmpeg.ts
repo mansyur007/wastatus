@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildArgs, outputFilename } from '../src/lib/ffmpegArgs'
-import { audioKbps, bitrateForTarget, encodeDuration, segmentPlan } from '../src/lib/bitrate'
+import { SEGMENT_LIST, buildArgs, buildCopyArgs, outputFilename } from '../src/lib/ffmpegArgs'
+import { buildPlan } from '../src/lib/plan'
+import { clipDuration } from '../src/lib/bitrate'
 import { WA_HARD_LIMIT_BYTES } from '../src/lib/presets'
 import type { MediaInfo, Settings } from '../src/types'
 
@@ -17,6 +18,9 @@ import type { MediaInfo, Settings } from '../src/types'
 export interface NativeMeta extends MediaInfo {
   name: string
   duration: number
+  /** Bytes on disk, so the planner can derive a bitrate ceiling. */
+  size?: number
+  codec?: string
 }
 
 export interface ConvertRequest {
@@ -40,10 +44,8 @@ export interface NativePart {
   totalParts: number
   start: number
   duration: number
+  copied?: boolean
 }
-
-/** Windows has no /dev/null; the pass-1 encode is thrown away into NUL. */
-export const NULL_SINK = process.platform === 'win32' ? 'NUL' : '/dev/null'
 
 interface RunResult {
   code: number
@@ -95,8 +97,8 @@ export function probe(bins: Binaries, inputPath: string): Promise<Record<string,
       bins.ffprobe,
       [
         '-v', 'error',
-        '-show_entries', 'stream=codec_type,codec_name,r_frame_rate,width,height',
-        '-show_entries', 'format=duration',
+        '-show_entries', 'stream=codec_type,codec_name,r_frame_rate,width,height,bit_rate',
+        '-show_entries', 'format=duration,bit_rate',
         '-of', 'json',
         inputPath,
       ],
@@ -116,12 +118,16 @@ export function probe(bins: Binaries, inputPath: string): Promise<Record<string,
         const result: Record<string, unknown> = { hasAudio: Boolean(audio) }
         const duration = Number(parsed.format?.duration)
         if (Number.isFinite(duration)) result.duration = duration
+        if (audio) result.audioCodec = audio.codec_name
         if (video) {
           result.codec = video.codec_name
           if (video.width) result.width = video.width
           if (video.height) result.height = video.height
           const [num, den] = String(video.r_frame_rate ?? '').split('/').map(Number)
           if (num && den) result.fps = Math.round((num / den) * 100) / 100
+          // The bitrate ceiling: never re-encode above what the source carries.
+          const bps = Number(video.bit_rate)
+          if (Number.isFinite(bps) && bps > 0) result.videoKbps = Math.round(bps / 1000)
         }
         resolve(result)
       } catch {
@@ -137,10 +143,25 @@ function ffmpegError(stderr: string, phase: string): string {
   return 'FFmpeg ' + phase + ' gagal' + (line ? ': ' + line.trim() : '.')
 }
 
+/** "part000.mp4,0.000000,30.000000" -> the real boundaries of each part. */
+function parseSegmentList(csv: string): { name: string; start: number; duration: number }[] {
+  const rows: { name: string; start: number; duration: number }[] = []
+  for (const line of csv.split('\n')) {
+    const [name, start, end] = line.trim().split(',')
+    if (!name || start === undefined || end === undefined) continue
+    const a = Number(start)
+    const b = Number(end)
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue
+    rows.push({ name, start: a, duration: Math.max(0, b - a) })
+  }
+  return rows
+}
+
 /**
- * Same orchestration as the wasm client - segment, 2-pass, shrink-and-retry -
- * but driven by the native binary, which is far faster and is not boxed in by
- * the wasm heap.
+ * Same orchestration as the wasm client: one ffmpeg run whose segment muxer
+ * writes every part from a single decode pass, then a targeted re-encode for
+ * any part that still overshoots. Driven by the native binary, which is far
+ * faster and is not boxed in by the wasm heap.
  */
 export async function convert(
   bins: Binaries,
@@ -148,84 +169,103 @@ export async function convert(
   report: (fraction: number, label: string) => void,
 ): Promise<NativePart[]> {
   const { inputPath, settings, meta } = req
-  const segments = segmentPlan(settings)
-  const twoPass = settings.encodingMode === 'size'
-  const startBitrate = twoPass
-    ? bitrateForTarget(settings.targetSizeMB, encodeDuration(settings), audioKbps(settings, meta))
-    : settings.videoBitrate
+
+  // The planner needs the file size to derive a bitrate ceiling when ffprobe
+  // did not report a per-stream one.
+  const size = meta.size ?? (await stat(inputPath).then((s) => s.size).catch(() => undefined))
+  const plan = buildPlan(settings, { ...meta, size })
 
   const dir = await mkdtemp(join(tmpdir(), 'wa-status-'))
-  const results: NativePart[] = []
+  const split = plan.segments.length > 1
+  const seam = split ? plan.seamSeconds : undefined
+  const listPath = join(dir, SEGMENT_LIST)
+  const partPath = (name: string) => join(dir, name)
+
+  const globals = ['-hide_banner', '-nostats', '-progress', 'pipe:1']
+  const window = clipDuration(settings)
 
   try {
-    for (const segment of segments) {
-      const total = segments.length
-      const prefix = total > 1 ? 'Bagian ' + (segment.index + 1) + '/' + total + ' - ' : ''
-      const from = segment.index / total
-      const to = (segment.index + 1) / total
-      const at = (a: number, b: number) => [from + (to - from) * a, from + (to - from) * b] as const
+    const base = {
+      input: inputPath,
+      output: split ? join(dir, 'part%03d.mp4') : join(dir, 'part000.mp4'),
+      settings,
+      meta,
+      videoBitrate: plan.videoKbps,
+      seamSeconds: seam,
+      segmentList: listPath,
+    }
+    const label = plan.kind === 'copy' ? 'Memotong tanpa encode ulang' : 'Encoding'
+    const track = (seconds: number) => {
+      report(Math.min(0.95, Math.max(0, seconds / window) * 0.95), label)
+    }
 
-      const output = join(dir, 'part-' + segment.index + '.mp4')
-      const passlog = join(dir, 'wapass' + segment.index)
-      let bitrate = startBitrate
-      let bytes: Buffer | null = null
-      let attempt = 0
-      const maxAttempts = twoPass ? 3 : 1
+    const args = plan.kind === 'copy' ? buildCopyArgs(base) : buildArgs(base)
+    const first = await run(bins.ffmpeg, globals.concat(args), track)
+    if (first.code !== 0) throw new Error(ffmpegError(first.stderr, plan.kind === 'copy' ? 'potong' : 'encode'))
 
-      while (attempt < maxAttempts) {
+    let rows = split
+      ? parseSegmentList(await readFile(listPath, 'utf8').catch(() => ''))
+      : []
+    if (!rows.length) {
+      rows = plan.segments.map((seg, i) => ({
+        name: 'part' + String(i).padStart(3, '0') + '.mp4',
+        start: 0,
+        duration: seg.duration,
+      }))
+    }
+
+    const total = rows.length
+    const results: NativePart[] = []
+
+    for (let i = 0; i < total; i++) {
+      const row = rows[i]
+      const start = settings.trimStart + row.start
+      let bytes = await readFile(partPath(row.name))
+      let bitrate = plan.videoKbps
+      let attempt = 1
+      const maxAttempts = plan.kind === 'encode' ? 3 : 1
+
+      while (bytes.byteLength > WA_HARD_LIMIT_BYTES && attempt < maxAttempts) {
         attempt++
-        const base = {
-          input: inputPath,
-          output,
-          settings,
-          meta,
-          videoBitrate: bitrate,
-          segment,
-          passlog,
-          nullPath: NULL_SINK,
-        }
-        const retryLabel = attempt > 1 ? ' (re-encode ' + (attempt - 1) + ')' : ''
-        const track = (span: readonly [number, number], label: string) => (seconds: number) => {
-          const p = Math.min(1, Math.max(0, seconds / segment.duration))
-          report(span[0] + (span[1] - span[0]) * p, label)
-        }
-        const globals = ['-hide_banner', '-nostats', '-progress', 'pipe:1']
-
-        if (twoPass) {
-          const l1 = prefix + 'Analisis pass 1' + retryLabel
-          const r1 = await run(bins.ffmpeg, globals.concat(buildArgs({ ...base, pass: 1 })), track(at(0, 0.45), l1))
-          if (r1.code !== 0) throw new Error(ffmpegError(r1.stderr, 'pass 1'))
-          const l2 = prefix + 'Encoding pass 2' + retryLabel
-          const r2 = await run(bins.ffmpeg, globals.concat(buildArgs({ ...base, pass: 2 })), track(at(0.45, 1), l2))
-          if (r2.code !== 0) throw new Error(ffmpegError(r2.stderr, 'pass 2'))
-        } else {
-          const l = prefix + 'Encoding CRF ' + settings.crf
-          const r = await run(bins.ffmpeg, globals.concat(buildArgs(base)), track(at(0, 1), l))
-          if (r.code !== 0) throw new Error(ffmpegError(r.stderr, 'encode'))
-        }
-
-        bytes = await readFile(output)
-        if (bytes.byteLength <= WA_HARD_LIMIT_BYTES || attempt >= maxAttempts) break
         bitrate = Math.max(150, Math.round(bitrate * 0.9))
+        report(0.95, 'Bagian ' + (i + 1) + ' terlalu besar - re-encode ' + (attempt - 1))
+        const retry = await run(
+          bins.ffmpeg,
+          globals.concat(
+            buildArgs({
+              input: inputPath,
+              output: partPath(row.name),
+              settings,
+              meta,
+              videoBitrate: bitrate,
+              // The nominal plan, not the CSV: an encode plan cuts exactly on
+              // the seams it forced, while the CSV drifts by a frame or two.
+              segment: plan.segments[i] ?? { index: i, start, duration: row.duration },
+            }),
+          ),
+        )
+        if (retry.code !== 0) break
+        bytes = await readFile(partPath(row.name))
       }
 
-      if (!bytes) throw new Error('Konversi bagian ' + (segment.index + 1) + ' tidak menghasilkan file.')
       results.push({
         bytes,
         size: bytes.byteLength,
-        filename: outputFilename(meta.name, settings, meta, { index: segment.index, total }),
+        filename: outputFilename(meta.name, settings, meta, { index: i, total }),
         attempts: attempt,
         videoBitrate: bitrate,
-        part: segment.index + 1,
+        part: i + 1,
         totalParts: total,
-        start: segment.start,
-        duration: segment.duration,
+        start,
+        duration: row.duration,
+        copied: plan.kind === 'copy',
       })
+      report(0.95 + 0.05 * ((i + 1) / total), 'Menyiapkan hasil')
     }
+
+    report(1, 'Selesai')
+    return results
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {})
   }
-
-  report(1, 'Selesai')
-  return results
 }

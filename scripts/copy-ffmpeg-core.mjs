@@ -1,5 +1,12 @@
 // Copies ffmpeg.wasm (core + the ESM worker classes) into public/ffmpeg so the
 // app is fully self-hosted: no CDN at runtime, and no bundler worker/wasm quirks.
+//
+// Single-thread core only. @ffmpeg/core-mt@0.12.10 was tried and reverted: with
+// COOP/COEP served and crossOriginIsolated true, it loads and spawns its
+// pthread pool, then deadlocks after "Stream mapping:" without emitting a
+// single frame - with or without an explicit -threads. The identical arguments
+// run fine on the single-thread core. Because it hangs rather than throwing, a
+// try/catch fallback never fires, so there is no safe way to ship it.
 import { copyFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,4 +31,5 @@ for (const f of ['ffmpeg-core.js', 'ffmpeg-core.wasm']) {
 for (const f of readdirSync(libSrc).filter((f) => f.endsWith('.js'))) {
   copyFileSync(join(libSrc, f), join(dest, 'lib', f))
 }
+
 console.log('[ffmpeg] core + worker copied to public/ffmpeg')

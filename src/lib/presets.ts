@@ -85,5 +85,9 @@ export function defaultSettings(meta: SourceMeta): Settings {
     fpsMode: meta.fps && meta.fps > 31 ? '30' : 'source',
     x264Preset: 'faster',
     faststart: true,
+    // On by default: when the source already satisfies every constraint there
+    // is nothing to gain from decoding it, and the run finishes in under a
+    // second instead of grinding through the whole file.
+    allowStreamCopy: true,
   }
 }

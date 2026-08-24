@@ -31,11 +31,11 @@ import {
   clipDuration,
   effectiveVideoBitrate,
   encodeDuration,
-  estimateSizeBytes,
   partCount,
   segmentPlan,
 } from '../lib/bitrate'
 import { X264_PRESETS, previewCommand } from '../lib/ffmpegArgs'
+import { buildPlan, estimatePartBytes } from '../lib/plan'
 import { formatBytes, formatDuration } from '../lib/format'
 
 const ASPECT_LABEL: Record<Settings['aspectMode'], string> = {
@@ -63,24 +63,27 @@ export function Panel({
   const parts = partCount(s)
   // Everything downstream of the split is per part: budget, bitrate, estimate.
   const partDuration = encodeDuration(s)
-  const estimate = estimateSizeBytes(s, meta)
+  const plan = useMemo(() => buildPlan(s, meta), [s, meta])
+  const estimate = estimatePartBytes(plan, s, meta)
   const videoKbps = effectiveVideoBitrate(s, meta)
   const dims = targetDimensions(s.resolution, meta)
   const overLimit = estimate > WA_HARD_LIMIT_BYTES
 
   const command = useMemo(
     () =>
-      previewCommand({
-        input: 'input.mp4',
-        output: 'output.mp4',
-        settings: s,
-        meta,
-        videoBitrate: videoKbps,
-        pass: s.encodingMode === 'size' ? 2 : undefined,
-        segment: segmentPlan(s)[0],
-        passlog: 'wapass0',
-      }),
-    [s, meta, videoKbps],
+      previewCommand(
+        {
+          input: 'input.mp4',
+          output: parts > 1 ? 'part%03d.mp4' : 'output.mp4',
+          settings: s,
+          meta,
+          videoBitrate: plan.videoKbps,
+          seamSeconds: parts > 1 ? s.segmentSeconds : undefined,
+          segment: parts > 1 ? undefined : segmentPlan(s)[0],
+        },
+        plan.kind,
+      ),
+    [s, meta, plan, parts],
   )
 
   return (
@@ -110,9 +113,18 @@ export function Panel({
           <Badge tone={overLimit ? 'over' : 'pass'}>{formatBytes(estimate)}</Badge>
         </div>
         <p className="tnum mt-2 text-[11px] leading-relaxed text-mist-500">
-          {videoKbps} kbps video + {audioKbps(s, meta)} kbps audio × {partDuration.toFixed(1)} s
-          {s.encodingMode === 'crf' ? ' — perkiraan kasar, CRF mengikuti isi video' : ''}
+          {plan.kind === 'copy'
+            ? 'Tanpa encode ulang — ukuran mengikuti sumber apa adanya'
+            : `maks ${plan.videoKbps} kbps video + ${audioKbps(s, meta)} kbps audio × ${partDuration.toFixed(1)} s`}
         </p>
+        {plan.kind === 'copy' ? (
+          <Note tone="good">
+            {plan.reason} Potongan mengikuti keyframe, jadi durasi tiap bagian bisa meleset
+            beberapa detik dari {s.segmentSeconds} s.
+          </Note>
+        ) : plan.cappedBySource ? (
+          <Note>{plan.reason}</Note>
+        ) : null}
       </div>
 
       <fieldset disabled={disabled} className="space-y-2.5 disabled:opacity-60">
@@ -277,7 +289,7 @@ export function Panel({
               value={s.encodingMode}
               onChange={(encodingMode) => onChange({ encodingMode })}
               options={[
-                { value: 'size', label: 'Target ukuran (2-pass)', hint: 'Bitrate dihitung otomatis' },
+                { value: 'size', label: 'Target ukuran', hint: 'Bitrate jadi batas atas, sekali pass' },
                 { value: 'crf', label: 'Kualitas (CRF)', hint: 'Ukuran mengikuti isi video' },
               ]}
             />
@@ -381,7 +393,7 @@ export function Panel({
         <Section
           icon={<IconTerminal className="h-4 w-4" />}
           title="Lanjutan"
-          summary={s.faststart ? 'Faststart aktif' : 'Faststart mati'}
+          summary={plan.kind === 'copy' ? 'Tanpa encode ulang' : s.faststart ? 'Faststart aktif' : 'Faststart mati'}
         >
           <Toggle
             checked={s.faststart}
@@ -389,6 +401,18 @@ export function Panel({
             label="Faststart"
             hint="moov atom di depan, mulai putar lebih cepat"
           />
+
+          <Toggle
+            checked={s.allowStreamCopy}
+            onChange={(allowStreamCopy) => onChange({ allowStreamCopy })}
+            label="Potong tanpa encode ulang bila memungkinkan"
+            hint="Dipakai kalau sumber sudah 9:16 H.264 dan tiap bagian sudah muat"
+          />
+          {s.allowStreamCopy && plan.kind === 'encode' ? (
+            <p className="text-[10.5px] leading-relaxed text-mist-500">
+              Tidak dipakai: {plan.reason}
+            </p>
+          ) : null}
 
           <div>
             <button

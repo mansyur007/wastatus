@@ -33,6 +33,13 @@ export interface Settings {
   fpsMode: FpsMode
   x264Preset: X264Preset
   faststart: boolean
+  /**
+   * Allow the no-re-encode path. When the source is already a 9:16 H.264/AAC
+   * file whose own bitrate keeps every part under the limit there is nothing to
+   * gain from decoding it: `-c copy` cuts it in a fraction of a second. The
+   * cost is that cuts land on keyframes, so a seam can drift by up to one GOP.
+   */
+  allowStreamCopy: boolean
 }
 
 /**
@@ -45,6 +52,14 @@ export interface MediaInfo {
   height: number
   fps?: number
   hasAudio?: boolean
+  /**
+   * Source video bitrate in kbps. This is the ceiling for any re-encode: bits
+   * the source never carried cannot be recovered by spending more of them, so a
+   * 225 kbps source must never be encoded at the 3940 kbps a 15 MB / 30 s
+   * budget would otherwise hand it.
+   */
+  videoKbps?: number
+  audioCodec?: string
 }
 
 export interface SourceMeta extends MediaInfo {
@@ -78,12 +93,14 @@ export interface ConversionResult {
   /** Where this part sits in the source, for the "0:30 - 1:00" label. */
   start: number
   duration: number
+  /** True when the part was cut with `-c copy`, i.e. never re-encoded. */
+  copied?: boolean
 }
 
 export type Stage =
   | { kind: 'idle' }
   | { kind: 'loading-engine' }
   | { kind: 'probing' }
-  | { kind: 'converting'; progress: number; label: string }
+  | { kind: 'converting'; progress: number; label: string; etaSeconds?: number }
   | { kind: 'done' }
   | { kind: 'error'; message: string }
