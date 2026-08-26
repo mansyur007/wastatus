@@ -35,6 +35,7 @@ import {
   segmentPlan,
 } from '../lib/bitrate'
 import { X264_PRESETS, previewCommand } from '../lib/ffmpegArgs'
+import type { EngineKind } from '../lib/engine'
 import { buildPlan, estimatePartBytes } from '../lib/plan'
 import { formatBytes, formatDuration } from '../lib/format'
 
@@ -50,14 +51,19 @@ export function Panel({
   onChange,
   onReset,
   disabled,
+  engine,
 }: {
   meta: SourceMeta
   settings: Settings
   onChange: (patch: Partial<Settings>) => void
   onReset: () => void
   disabled?: boolean
+  engine?: EngineKind
 }) {
   const [showCommand, setShowCommand] = useState(false)
+  // The hardware encoder takes a bitrate and nothing else: no x264 preset, no
+  // rate factor. Hiding the knob beats leaving a control that does nothing.
+  const hardware = engine === 'webcodecs'
   const s = settings
   const duration = clipDuration(s)
   const parts = partCount(s)
@@ -349,16 +355,18 @@ export function Panel({
             ) : null}
           </Field>
 
-          <Field
-            label="Kecepatan encode"
-            hint={X264_PRESETS.find((x) => x.value === s.x264Preset)?.hint}
-          >
-            <SegmentedControl<X264Preset>
-              value={s.x264Preset}
-              options={X264_PRESETS.map((x) => ({ value: x.value, label: x.label }))}
-              onChange={(x264Preset) => onChange({ x264Preset })}
-            />
-          </Field>
+          {hardware ? null : (
+            <Field
+              label="Kecepatan encode"
+              hint={X264_PRESETS.find((x) => x.value === s.x264Preset)?.hint}
+            >
+              <SegmentedControl<X264Preset>
+                value={s.x264Preset}
+                options={X264_PRESETS.map((x) => ({ value: x.value, label: x.label }))}
+                onChange={(x264Preset) => onChange({ x264Preset })}
+              />
+            </Field>
+          )}
         </Section>
 
         <Section
@@ -421,12 +429,22 @@ export function Panel({
               className="text-[11px] font-medium text-mist-400 underline-offset-4 transition-colors hover:text-mist-100 hover:underline"
             >
               {showCommand ? 'Sembunyikan' : 'Lihat'} perintah FFmpeg
+              {hardware ? ' setara' : ''}
               {parts > 1 ? ' (bagian 1)' : ''}
             </button>
             {showCommand ? (
-              <pre className="well mt-2.5 overflow-x-auto p-3 font-mono text-[10.5px] leading-relaxed text-mist-400 animate-fade">
-                {command}
-              </pre>
+              <>
+                <pre className="well mt-2.5 overflow-x-auto p-3 font-mono text-[10.5px] leading-relaxed text-mist-400 animate-fade">
+                  {command}
+                </pre>
+                {hardware ? (
+                  <p className="mt-2 text-[10.5px] leading-relaxed text-mist-500">
+                    Di browser ini pekerjaan dikerjakan encoder hardware lewat WebCodecs, bukan
+                    FFmpeg. Perintah di atas adalah padanannya — hasilnya sama, kecuali laju bit
+                    diatur langsung ke {plan.videoKbps} kbps, bukan lewat CRF.
+                  </p>
+                ) : null}
+              </>
             ) : null}
           </div>
         </Section>

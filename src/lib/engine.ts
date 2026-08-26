@@ -1,13 +1,22 @@
 import type { ConversionResult, Settings, SourceMeta } from '../types'
 import * as wasm from './ffmpegClient'
+import * as webcodecs from './webcodecs'
 
 /**
- * One conversion API over two engines.
+ * One conversion API over three engines, picked best-first.
  *
- * In the browser (and inside the Capacitor APK) everything runs through
- * ffmpeg.wasm. In the Electron build a preload script exposes `window.waNative`
- * and the work goes to a bundled native FFmpeg instead - same arguments, same
- * segment plan, roughly 20-50x the speed.
+ * 1. native     - the Electron build, where a preload script exposes
+ *                 `window.waNative` and the work goes to a bundled FFmpeg
+ *                 binary. Fastest, and the only engine with real CRF.
+ * 2. webcodecs  - every current browser, the PWA and the APK. Decode and
+ *                 encode go to the device's own media hardware through
+ *                 WebCodecs, roughly 20-40x the wasm engine.
+ * 3. wasm       - ffmpeg.wasm. Software H.264 on one thread; kept as the
+ *                 fallback for browsers without WebCodecs and for sources
+ *                 whose codec the hardware decoder will not take.
+ *
+ * All three run the same planner, so which one served a job changes how long
+ * it took, not how the files come out.
  */
 
 interface NativeInfo {
@@ -73,7 +82,7 @@ export function setNativeExitGuard(on: boolean): void {
   native?.setExitGuard?.(on)
 }
 
-export type EngineKind = 'native' | 'wasm'
+export type EngineKind = 'native' | 'webcodecs' | 'wasm'
 
 export interface EngineDescription {
   kind: EngineKind
@@ -94,13 +103,17 @@ export async function describeEngine(): Promise<EngineDescription> {
         detail: nativeInfo.version || 'binary bawaan aplikasi',
       }
     }
+  }
+  const wc = await webcodecs.support()
+  if (wc.ok) return { kind: 'webcodecs', label: 'WebCodecs', detail: wc.reason }
+  if (native) {
     return {
       kind: 'wasm',
       label: 'ffmpeg.wasm',
       detail: 'FFmpeg bawaan tidak ditemukan, kembali ke mesin wasm',
     }
   }
-  return { kind: 'wasm', label: 'ffmpeg.wasm', detail: 'berjalan di dalam browser' }
+  return { kind: 'wasm', label: 'ffmpeg.wasm', detail: wc.reason }
 }
 
 /** True only when the native binary is present and usable. */
@@ -110,11 +123,27 @@ async function nativeReady(): Promise<boolean> {
   return Boolean(nativeInfo?.ready)
 }
 
+/** True when the browser engine can take the job, so wasm stays unloaded. */
+async function webcodecsReady(): Promise<boolean> {
+  if (await nativeReady()) return false
+  return (await webcodecs.support()).ok
+}
+
 export const probeWithVideoElement = wasm.probeWithVideoElement
 
-/** Warms up whichever engine will do the work. */
+/**
+ * Warms up whichever engine will do the work.
+ *
+ * On the WebCodecs path this only spins up a worker, so the 32 MB wasm core is
+ * never fetched - the wait between dropping a file and seeing the panel goes
+ * from seconds to nothing.
+ */
 export async function prepareEngine(): Promise<void> {
   if (await nativeReady()) return
+  if (await webcodecsReady()) {
+    await webcodecs.prepare()
+    return
+  }
   await wasm.getEngine()
 }
 
@@ -128,6 +157,12 @@ export async function probeExtra(file: File): Promise<Partial<SourceMeta>> {
       return {}
     }
     return {}
+  }
+  if (await webcodecsReady()) {
+    // A container mediabunny cannot parse is not a lost cause: ffprobe still
+    // reads it, and the conversion will fall back to wasm anyway.
+    const meta = await webcodecs.probe(file).catch(() => null)
+    if (meta) return meta
   }
   return wasm.probeWithFfprobe(file)
 }
@@ -145,26 +180,60 @@ const serialise = (meta: SourceMeta): SerialisableMeta => ({
   videoKbps: meta.videoKbps,
 })
 
+/**
+ * Wraps a position-only progress stream with the elapsed-time extrapolation
+ * that produces an ETA. Identical for every engine, so it lives here.
+ */
+function withEta(handlers: wasm.ConvertHandlers) {
+  const startedAt = Date.now()
+  return (fraction: number, label: string) => {
+    const p = Math.min(1, Math.max(0, fraction))
+    const elapsed = (Date.now() - startedAt) / 1000
+    // Below a couple of percent the extrapolation is noise, not an estimate.
+    const eta = p > 0.02 && elapsed > 2 ? Math.round((elapsed * (1 - p)) / p) : undefined
+    handlers.onProgress(p, label, eta)
+  }
+}
+
 export async function convert(
   meta: SourceMeta,
   settings: Settings,
   handlers: wasm.ConvertHandlers,
 ): Promise<ConversionResult[]> {
-  if (!(await nativeReady())) return wasm.convert(meta, settings, handlers)
+  if (!(await nativeReady())) {
+    if (await webcodecsReady()) {
+      const report = withEta(handlers)
+      let started = false
+      try {
+        return await webcodecs.convert(meta, settings, (fraction, label) => {
+          if (fraction > 0) started = true
+          report(fraction, label)
+        })
+      } catch (e) {
+        // Falling back is right for a source the hardware pipeline refuses, and
+        // for anything that goes wrong before the first frame - both are "this
+        // browser cannot do it", and wasm can. A failure part-way through a run
+        // is different: restarting on an engine seventeen times slower, without
+        // saying so, is worse than surfacing the error.
+        const unsupported = e instanceof webcodecs.UnsupportedSourceError
+        if (started && !unsupported) throw e
+        handlers.onProgress(
+          0,
+          unsupported ? 'Codec tidak didukung hardware · pakai ffmpeg.wasm' : 'Beralih ke ffmpeg.wasm',
+        )
+        await wasm.getEngine()
+      }
+    }
+    return wasm.convert(meta, settings, handlers)
+  }
 
   const inputPath = native!.pathForFile(meta.file)
   // A File with no path (rare: synthetic drops) still has bytes, so fall back.
   if (!inputPath) return wasm.convert(meta, settings, handlers)
 
-  // The native side reports position only; the elapsed-time extrapolation that
-  // produces an ETA is identical for both engines, so it lives here.
-  const startedAt = Date.now()
-  const off = native!.onProgress(({ fraction, label }) => {
-    const p = Math.min(1, Math.max(0, fraction))
-    const elapsed = (Date.now() - startedAt) / 1000
-    const eta = p > 0.02 && elapsed > 2 ? Math.round((elapsed * (1 - p)) / p) : undefined
-    handlers.onProgress(p, label, eta)
-  })
+  // The native side reports position only; the ETA comes from withEta.
+  const report = withEta(handlers)
+  const off = native!.onProgress(({ fraction, label }) => report(fraction, label))
   try {
     const parts = await native!.convert({ inputPath, settings, meta: serialise(meta) })
     return parts.map((p) => {

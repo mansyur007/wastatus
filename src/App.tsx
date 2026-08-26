@@ -98,7 +98,8 @@ export default function App() {
       setMeta(withBitrate)
       setSettings(normalize(defaultSettings(withBitrate), withBitrate))
 
-      // ffprobe needs the wasm core; fps/codec arrive a moment later.
+      // fps/codec/bitrate arrive a moment later. On WebCodecs that is a plain
+      // container read; only the wasm fallback has to fetch a core first.
       setStage({ kind: 'loading-engine' })
       await prepareEngine()
       setStage({ kind: 'probing' })
@@ -106,7 +107,6 @@ export default function App() {
       const merged = withDerivedBitrate({ ...base, ...extra } as SourceMeta)
       setMeta(merged)
       if (!dirtyRef.current) setSettings(normalize(defaultSettings(merged), merged))
-      // The wasm engine only learns whether it got threads once the core is up.
       describeEngine().then(setEngine)
       setStage({ kind: 'idle' })
     } catch (e) {
@@ -184,7 +184,9 @@ export default function App() {
   // A stream copy keeps the source bytes, so its size follows the source, not
   // the bitrate the encoder would have picked.
   const perPart = settings && plan ? estimatePartBytes(plan, settings, meta ?? undefined) : 0
-  const native = engine?.kind === 'native'
+  // The desktop binary and WebCodecs both run on real hardware; only the wasm
+  // fallback is slow enough to be worth warning about up front.
+  const accelerated = engine ? engine.kind !== 'wasm' : false
 
   return (
     <div className="min-h-screen">
@@ -206,12 +208,12 @@ export default function App() {
             <span
               title={engine.detail}
               className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium sm:inline-flex ${
-                native
+                accelerated
                   ? 'border-wa-green/30 bg-wa-green/10 text-[#7bebab]'
                   : 'border-white/[0.08] bg-white/[0.03] text-mist-400'
               }`}
             >
-              {native ? (
+              {accelerated ? (
                 <IconBolt className="h-3 w-3" />
               ) : (
                 <span className="h-1.5 w-1.5 rounded-full bg-mist-500" />
@@ -277,7 +279,7 @@ export default function App() {
 
                 {/* A long source turns into a lot of parts and a long run. Saying
                     so before the click beats a progress bar that never moves. */}
-                {parts > MANY_PARTS && plan?.kind !== 'copy' ? (
+                {parts > MANY_PARTS && plan?.kind !== 'copy' && !accelerated ? (
                   <p className="flex gap-2 rounded-xl border border-amber-400/25 bg-amber-500/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-amber-200/90">
                     <IconAlert className="mt-px h-3.5 w-3.5 shrink-0" />
                     <span>
@@ -326,6 +328,7 @@ export default function App() {
               onChange={patch}
               onReset={reset}
               disabled={stage.kind === 'converting'}
+              engine={engine?.kind}
             />
 
             {results.length ? (
