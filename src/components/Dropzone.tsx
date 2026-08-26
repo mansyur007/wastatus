@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { IconAlert, IconBolt, IconDownload, IconFrame, IconLock, IconPhoneVideo } from './icons'
+import { formatBytes } from '../lib/format'
+import apkRelease from '../apk-release.json'
 
 export const ACCEPTED = ['mp4', 'mov', 'mkv', 'webm', 'avi', '3gp', 'm4v']
 const ACCEPT_ATTR = ACCEPTED.map((e) => `.${e}`).join(',') + ',video/*'
@@ -11,8 +13,15 @@ export function isAccepted(file: File): boolean {
 
 /** Nama file APK sengaja tetap supaya tautannya tidak berubah tiap rilis;
  *  Caddy menyajikan /downloads/* dengan no-cache agar tidak ada yang dapat
- *  APK basi. Ukurannya diperbarui saat APK dibangun ulang. */
-const APK = { href: './downloads/wa-status.apk', size: '13.1 MB', minAndroid: 'Android 7+' }
+ *  APK basi. Versi, ukuran, dan tanggalnya ditulis oleh scripts/publish-apk.mjs
+ *  saat APK dibangun, jadi tidak ada angka yang perlu disetel tangan. */
+const APK = { href: './downloads/wa-status.apk', minAndroid: 'Android 7+' }
+
+const APK_DATE = new Date(apkRelease.builtAt).toLocaleDateString('id-ID', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
 
 const FACTS: { icon: typeof IconLock; label: string; value: string }[] = [
   { icon: IconLock, label: 'Privasi', value: 'Diproses di perangkat' },
@@ -150,7 +159,10 @@ export function Dropzone({ onFile, error }: { onFile: (f: File) => void; error?:
       <div className="mt-4 flex flex-col items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-4 text-center sm:flex-row sm:justify-between sm:text-left">
         <span className="text-xs text-mist-400">
           <span className="block text-sm font-medium text-mist-100">Ada versi Android-nya</span>
-          Konversi langsung di HP, tanpa perlu buka browser. {APK.size} - {APK.minAndroid}
+          Konversi langsung di HP, tanpa perlu buka browser. {APK.minAndroid}
+          <span className="mt-1 block text-[11px] text-mist-500">
+            v{apkRelease.version} · {formatBytes(apkRelease.sizeBytes)} · dibangun {APK_DATE}
+          </span>
         </span>
         <a
           href={APK.href}

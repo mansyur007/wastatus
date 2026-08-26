@@ -1,7 +1,8 @@
 # WA Status Converter
 
-Konverter video ke format WhatsApp Status yang berjalan **sepenuhnya di browser** —
-ffmpeg.wasm, tanpa server, file tidak pernah diunggah ke mana pun.
+Konverter video ke format WhatsApp Status yang berjalan **sepenuhnya di
+perangkat** — WebCodecs (encoder hardware) dengan ffmpeg.wasm sebagai cadangan,
+tanpa server, file tidak pernah diunggah ke mana pun.
 
 ```bash
 npm install
@@ -56,6 +57,47 @@ project dan Windows menolak rename direktori yang sedang dipantau.
 
 Catatan lisensi: build FFmpeg dengan libx264 berlisensi GPL. Untuk pemakaian
 pribadi tidak masalah; kalau mau didistribusikan, ikuti kewajiban GPL-nya.
+
+## Mesin di browser: WebCodecs, wasm cuma cadangan
+
+Di browser, PWA, dan APK, konversi dikerjakan lewat **WebCodecs**: decode dan
+encode diserahkan ke mesin media milik perangkat — chip yang sama yang dipakai
+browser untuk memutar video. ffmpeg.wasm tetap ada, tapi hanya sebagai cadangan.
+
+Angka terukur (sumber 1080p60 HEVC, 46 detik, ke 720x1280/30, mesin yang sama):
+
+| Jalur | Waktu | Catatan |
+| --- | --- | --- |
+| ffmpeg.wasm | ~6 menit (ekstrapolasi 78 dtk untuk 10 dtk klip) | H.264 software, satu thread |
+| WebCodecs | 20 detik | setara FFmpeg native di mesin ini |
+| FFmpeg native (Electron) | 14,5 detik | `-hwaccel auto` + libx264 |
+
+Potong-tanpa-encode-ulang juga pindah ke jalur ini: 70 detik sumber jadi 3
+bagian dalam **75 ms**, karena tidak ada satu pun frame yang di-decode.
+
+Yang perlu diketahui saat membaca kodenya:
+
+- `src/lib/webcodecs/pipeline.ts` — decode → canvas (framing 9:16) → encode →
+  mux, semuanya lewat [mediabunny](https://mediabunny.dev). Tiap bagian adalah
+  `Output` tersendiri, jadi frame pertamanya otomatis keyframe dan filenya bisa
+  diputar sendiri, tanpa perlu `-force_key_frames` + segment muxer.
+- Jalannya di **web worker** (`worker.ts`): encode hardware pun tetap menggambar
+  tiap frame ke canvas, dan itu cukup berat untuk membuat UI tersendat.
+- Bundle mediabunny (~536 kB) hanya masuk ke chunk worker. Browser tanpa
+  WebCodecs tidak mengunduhnya, dan browser dengan WebCodecs tidak pernah
+  mengunduh core wasm 32 MB — termasuk untuk baca metadata, yang sekarang
+  selesai dalam ~13 ms.
+- **CRF tidak ada di encoder hardware.** Ia hanya menerima target bitrate, jadi
+  mode "Target ukuran" memakai bitrate dari planner apa adanya: hasilnya
+  konsisten mendarat di target (mis. 14,7 MB untuk target 15 MB), sementara
+  jalur FFmpeg dengan capped-CRF sering jauh di bawah target kalau isinya
+  ringan. Mode "Kualitas (CRF)" tetap memberi file kecil, lewat heuristik
+  bitrate yang sama yang dipakai estimasi di panel. Knob "Kecepatan encode"
+  (preset x264) disembunyikan di jalur ini karena tidak ada efeknya.
+- Sumber yang codec-nya tidak bisa di-decode hardware, atau kegagalan apa pun
+  **sebelum frame pertama**, jatuh otomatis ke ffmpeg.wasm. Kegagalan di
+  tengah jalan sengaja dimunculkan sebagai error, bukan diam-diam diulang di
+  mesin yang 17x lebih lambat.
 
 ## Cara kerja
 
@@ -208,24 +250,34 @@ src/
   lib/presets.ts      konstanta WA, preset default, dimensi target, safe zone
   lib/bitrate.ts      segmentPlan (auto split), target size -> bitrate, estimasi
   lib/ffmpegArgs.ts   filter chain + argumen FFmpeg (+ preview perintah)
-  lib/ffmpegClient.ts load core, ffprobe, 2-pass per bagian, progress, auto-retry
+  lib/ffmpegClient.ts load core, ffprobe, segment muxer, progress, auto-retry
+  lib/webcodecs/      mesin hardware: pipeline (decode/canvas/encode/mux),
+                      worker, dan klien di UI thread
   components/         Dropzone, Preview (safe zone), Panel, Result
   components/icons.tsx  ikon SVG inline (tanpa dependensi, tanpa emoji)
-  lib/engine.ts       pemilih backend: FFmpeg native (Electron) atau wasm
+  lib/engine.ts       pemilih backend: native (Electron) > WebCodecs > wasm
 electron/
-  main.ts             jendela, spawn FFmpeg native, 2-pass per bagian, progress
+  main.ts             jendela, spawn FFmpeg native, progress
+  ffmpeg.ts           orkestrasi native: hwaccel decode, segment muxer, retry
   preload.ts          jembatan IPC minimal (window.waNative)
 ```
 
 ## Catatan performa
 
-ffmpeg.wasm di sini single-thread. Sebagai gambaran: klip 8 detik ke 1080x1920
-2-pass memakan ~65 detik — dan auto split mengalikan itu dengan jumlah bagian,
-karena tiap bagian di-encode sendiri.
+Sejak WebCodecs masuk, ffmpeg.wasm hanya kena kalau browsernya tidak punya
+WebCodecs atau codec sumbernya tidak bisa di-decode hardware. Angkanya ada di
+tabel di atas.
 
-Default 720x1280 memangkas itu kira-kira setengah (2.25x lebih sedikit piksel),
-yang kurang lebih menutupi biaya preset `faster`. Untuk lebih cepat lagi, pakai
-mode CRF (satu pass) atau preset `Cepat` di panel.
+Di sisi desktop, decode dipindah ke GPU lewat `-hwaccel auto` (lihat
+`electron/ffmpeg.ts`). Encode tetap libx264, jadi tidak ada satu piksel pun yang
+berubah — hanya waktunya: 19,8 → 14,5 detik pada sumber 1080p60 HEVC. Encoder
+hardware (`h264_qsv`/`nvenc`/`amf`) sengaja **tidak** dipakai di sini: ia turun
+ke ~10 detik, tapi menukar capped-CRF dengan ABR, dan di desktop jaminan "selalu
+di bawah 16 MB dengan kualitas seadanya isi" lebih berharga daripada 4 detik.
+
+Kalau jalur wasm yang kepakai, default 720x1280 memangkas waktu kira-kira
+setengah dibanding 1080x1920 (2.25x lebih sedikit piksel). Untuk lebih cepat
+lagi, pakai mode CRF atau preset `Cepat` di panel.
 
 `@ffmpeg/core-mt` (multi-thread) sudah ditinjau dan **sengaja tidak dipakai**:
 percepatannya hanya ~2x, dokumentasi resminya menandai versi multi-thread sebagai

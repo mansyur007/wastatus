@@ -14,13 +14,14 @@
     "electron:build": "npm run build && node scripts/build-electron.mjs && electron-builder --win",
     "typecheck": "tsc -b && tsc -p tsconfig.electron.json",
     "android:sync": "npm run build && cap sync android && node scripts/strip-android-assets.mjs",
-    "android:build": "npm run android:sync && cd android && gradlew assembleRelease"
+    "android:build": "npm run android:sync && node scripts/build-apk.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "@ffmpeg/ffmpeg": "^0.12.10",
+    "mediabunny": "^1.55.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
