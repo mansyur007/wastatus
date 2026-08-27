@@ -16,8 +16,14 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const assets = join(root, 'android', 'app', 'src', 'main', 'assets', 'public')
 
-/** Paths under the synced assets that must never reach the APK. */
-const STRIP = ['downloads']
+/**
+ * Paths under the synced assets that must never reach the APK.
+ *
+ * `downloads` is the big one - see above. The rest are files that only mean
+ * anything to a web crawler: shipping a sitemap and a share card inside an
+ * Android package is dead weight, however small.
+ */
+const STRIP = ['downloads', 'og.png', 'robots.txt', 'sitemap.xml']
 
 function bytes(path) {
   const st = statSync(path)

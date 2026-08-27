@@ -5,11 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#070A09" />
+
+    <title>WA Status Converter — Kompres & Potong Video WhatsApp Status</title>
     <meta
       name="description"
-      content="Ubah video apa pun jadi WhatsApp Status 9:16 di bawah 16 MB. Semua proses berjalan di perangkat kamu."
+      content="Ubah video jadi WhatsApp Status 9:16 di bawah 16 MB. Otomatis dipotong per 30 detik dan diproses di perangkatmu — tanpa upload, tanpa watermark, gratis."
     />
-    <title>WA Status Converter</title>
+    <!-- max-image-preview:large is what lets the card image show full width in
+         search results instead of as a thumbnail. -->
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="author" content="mansyur007" />
+
+    <!-- Absolute, unlike every other URL on the page: a crawler resolves these
+         against its own copy of the document, not against document.baseURI. The
+         Electron and Capacitor builds carry them too, where they are inert. -->
+    <link rel="canonical" href="https://wastatus.emha.space/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WA Status Converter" />
+    <meta property="og:locale" content="id_ID" />
+    <meta property="og:url" content="https://wastatus.emha.space/" />
+    <meta property="og:title" content="WA Status Converter — video apa pun jadi WhatsApp Status 9:16" />
+    <meta
+      property="og:description"
+      content="Di bawah 16 MB, otomatis dipotong per 30 detik, diproses di perangkatmu. Tanpa upload, tanpa watermark, gratis."
+    />
+    <meta property="og:image" content="https://wastatus.emha.space/og.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="WA Status Converter — video apa pun jadi WhatsApp Status 9:16, di bawah 16 MB"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="WA Status Converter — video apa pun jadi WhatsApp Status 9:16" />
+    <meta
+      name="twitter:description"
+      content="Di bawah 16 MB, otomatis dipotong per 30 detik, diproses di perangkatmu. Tanpa upload, tanpa watermark, gratis."
+    />
+    <meta name="twitter:image" content="https://wastatus.emha.space/og.png" />
 
     <!-- SVG first for sharp tabs; the .ico is the fallback older engines and
          bare /favicon.ico probes reach for. -->
@@ -17,16 +53,100 @@
     <link rel="icon" href="./icon.svg" type="image/svg+xml" sizes="any" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
+
+    <!-- The APK version is substituted at build time from src/apk-release.json
+         (see vite.config.ts), for the same reason the download button reads it:
+         a version number nobody has to remember to update cannot go stale. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "@id": "https://wastatus.emha.space/#app",
+            "name": "WA Status Converter",
+            "url": "https://wastatus.emha.space/",
+            "inLanguage": "id-ID",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Web browser (Chrome, Edge, Safari), Android, Windows",
+            "browserRequirements": "Butuh browser dengan WebCodecs atau WebAssembly",
+            "description": "Konverter video ke WhatsApp Status 9:16 di bawah 16 MB yang berjalan sepenuhnya di perangkat pengguna, tanpa mengunggah file ke server.",
+            "featureList": [
+              "Crop, black bars, atau latar blur ke rasio 9:16",
+              "Target ukuran otomatis di bawah batas 16 MB WhatsApp",
+              "Pecah video panjang jadi beberapa Status berurutan",
+              "Potong tanpa encode ulang bila sumber sudah memenuhi syarat",
+              "Encode lewat hardware perangkat (WebCodecs)",
+              "Diproses di perangkat, tidak ada file yang diunggah"
+            ],
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "IDR" },
+            "isAccessibleForFree": true,
+            "author": { "@type": "Person", "name": "mansyur007" }
+          },
+          {
+            "@type": "MobileApplication",
+            "@id": "https://wastatus.emha.space/#apk",
+            "name": "WA Status Converter untuk Android",
+            "operatingSystem": "Android 7.0+",
+            "applicationCategory": "MultimediaApplication",
+            "softwareVersion": "%APK_VERSION%",
+            "fileSize": "%APK_SIZE%",
+            "downloadUrl": "https://wastatus.emha.space/downloads/wa-status.apk",
+            "installUrl": "https://wastatus.emha.space/",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "IDR" },
+            "isAccessibleForFree": true
+          }
+        ]
+      }
+    </script>
+
     <style>
       /* Painted before the bundle loads, so there is no white flash. */
       html,
       body {
         background: #070a09;
       }
+      /* Only ever visible to a crawler that does not run scripts. */
+      .noscript {
+        margin: 0 auto;
+        max-width: 46rem;
+        padding: 3rem 1.5rem;
+        color: #c9d6d0;
+        font: 16px/1.7 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      .noscript h1 {
+        color: #eaf2ee;
+        font-size: 1.6rem;
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Everything above the fold is rendered by React, so a client that does
+         not execute JavaScript would otherwise see an empty document. This is
+         the same claim the app makes, in plain HTML. -->
+    <noscript>
+      <div class="noscript">
+        <h1>WA Status Converter</h1>
+        <p>
+          Ubah video apa pun jadi WhatsApp Status 9:16 di bawah 16 MB. Videonya di-crop,
+          diperkecil, dan dikompres langsung di perangkatmu — tidak ada file yang diunggah
+          ke server mana pun.
+        </p>
+        <p>
+          Video yang lebih panjang dari 30 detik dipecah otomatis jadi beberapa Status
+          berurutan. Kalau sumbernya sudah 9:16 H.264 dan tiap bagian sudah muat, videonya
+          cuma dipotong tanpa encode ulang, jadi kualitasnya tidak berkurang sama sekali.
+        </p>
+        <p>
+          Aplikasi ini butuh JavaScript karena seluruh konversinya berjalan di browser kamu.
+          Nyalakan JavaScript untuk memakainya, atau
+          <a href="./downloads/wa-status.apk">unduh versi Android-nya</a>.
+        </p>
+      </div>
+    </noscript>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

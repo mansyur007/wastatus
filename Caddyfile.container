@@ -52,6 +52,12 @@
 	@html path / /index.html
 	header @html Cache-Control "no-cache"
 
+	# Aset SEO: kartu share, robots, sitemap. Sehari cukup - crawler dan
+	# scraper WhatsApp tidak perlu menariknya ulang tiap kali seseorang
+	# membagikan tautannya, tapi perubahan tetap mendarat dalam sehari.
+	@seo path /og.png /robots.txt /sitemap.xml
+	header @seo Cache-Control "public, max-age=86400"
+
 	respond /healthz "ok" 200
 
 	try_files {path} /index.html
