@@ -99,6 +99,31 @@ Yang perlu diketahui saat membaca kodenya:
   tengah jalan sengaja dimunculkan sebagai error, bukan diam-diam diulang di
   mesin yang 17x lebih lambat.
 
+## SEO dan kartu share
+
+Aplikasinya di-render di klien, jadi crawler yang tidak menjalankan JavaScript
+akan melihat dokumen kosong. Yang dipasang untuk menutup itu:
+
+- `index.html` — title + description yang memuat kata yang benar-benar dicari
+  orang, canonical absolut, Open Graph + Twitter card, dan `robots` dengan
+  `max-image-preview:large` supaya kartunya tampil lebar di hasil pencarian.
+- **JSON-LD** (`WebApplication` + `MobileApplication`). Nomor versi dan ukuran
+  APK-nya **tidak diketik tangan**: `vite.config.ts` menyuntiknya dari
+  `src/apk-release.json` saat build, sumber yang sama dengan tombol unduh.
+- `<noscript>` berisi klaim yang sama dalam HTML biasa, untuk klien tanpa JS.
+- `public/robots.txt` + `public/sitemap.xml`. `/assets/` sengaja **tidak**
+  diblokir — Google butuh bundle dan stylesheet untuk me-render aplikasi klien;
+  yang diblokir hanya `/ffmpeg/` (core wasm 32 MB) dan `/downloads/` (APK).
+- `public/og.png` (1200x630) dibuat ulang lewat
+  [`scripts/make-og-image.mjs`](scripts/make-og-image.mjs), dikomposisi dengan
+  binary FFmpeg yang sudah dipakai build desktop — jadi tidak ada dependensi
+  baru untuk aset yang berubah setahun sekali.
+
+Semua URL absolut di head sengaja hard-code ke `https://wastatus.emha.space`:
+crawler me-resolve-nya terhadap salinannya sendiri, bukan terhadap
+`document.baseURI` yang di build ini relatif (`base: './'`). Build Electron dan
+Capacitor ikut membawa tag itu, di sana tidak ada efeknya.
+
 ## Cara kerja
 
 - `scripts/copy-ffmpeg-core.mjs` menyalin core ffmpeg.wasm + module worker ke

@@ -1,0 +1,12 @@
+# https://wastatus.emha.space
+#
+# /assets/ is deliberately NOT blocked: Google needs the bundle and the
+# stylesheet to render a client-side app, and a blocked renderer sees a blank
+# page. What is blocked is the payload nobody searches for - a 32 MB wasm core
+# and a 13 MB APK - so crawl budget goes to the page instead.
+User-agent: *
+Allow: /
+Disallow: /ffmpeg/
+Disallow: /downloads/
+
+Sitemap: https://wastatus.emha.space/sitemap.xml
